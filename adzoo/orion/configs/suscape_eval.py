@@ -205,7 +205,13 @@ model = dict(
 )
 
 dataset_type = "SUScapeOrionDataset"
-data_root = "data/suscape_scenes"  # Path to your SUScape dataset
+
+# Data paths - Update these to match your directory structure
+# For new structure (separate CSV directory):
+data_root = "data/suscape_scenes"  # Directory containing scene-XXXXXX folders
+csv_root = "data/suscape_scene_traj_csv_alldistance_fixyaw"  # Directory containing X.csv files
+# For old structure (CSV in scene directories), set csv_root=None
+
 info_root = "data/suscape_infos"
 file_client_args = dict(backend="disk")
 ann_file_test = info_root + f"/suscape_infos_test.pkl"
@@ -250,6 +256,7 @@ data = dict(
     test=dict(
         type=dataset_type,
         data_root=data_root,
+        csv_root=csv_root,  # Add csv_root parameter
         ann_file=ann_file_test,
         pipeline=test_pipeline,
         classes=class_names,

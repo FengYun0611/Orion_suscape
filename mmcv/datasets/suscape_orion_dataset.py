@@ -6,12 +6,14 @@
 SUScape Dataset for ORION Model Evaluation
 
 This dataset handles the SUScape dataset format which includes:
-- CSV files for vehicle trajectories (0.csv format)
+- CSV files for vehicle trajectories
 - Multi-view camera images from scene directories
 - No map information available
 
-Data structure:
-    suscape_scenes/
+Supported Data Structures:
+
+1. Old structure (with raws/ subdirectory):
+    data_root/
     ├── raws/
     │   ├── scene-000000/
     │   │   ├── 0.csv
@@ -23,6 +25,25 @@ Data structure:
     │   │   └── CAM_BACK_RIGHT/
     │   ├── scene-000001/
     │   └── ...
+
+2. New structure (separate CSV directory):
+    data_root/
+    ├── scene-000000/
+    │   ├── CAM_FRONT/
+    │   ├── CAM_FRONT_LEFT/
+    │   ├── CAM_FRONT_RIGHT/
+    │   ├── CAM_BACK/
+    │   ├── CAM_BACK_LEFT/
+    │   └── CAM_BACK_RIGHT/
+    ├── scene-000001/
+    └── ...
+    
+    csv_root/
+    ├── 0.csv      # Corresponds to scene-000000
+    ├── 1.csv      # Corresponds to scene-000001
+    └── ...
+
+For new structure, set csv_root parameter to the directory containing CSV files.
 """
 
 import copy
@@ -63,8 +84,13 @@ class SUScapeOrionDataset(Custom3DDataset):
     collision rates.
     
     Args:
-        data_root (str): Root directory of SUScape dataset (e.g., 'data/suscape_scenes')
+        data_root (str): Root directory containing scene folders
+            Old structure: Should point to parent of 'raws/' directory
+            New structure: Should point to directory containing scene-XXXXXX folders
         ann_file (str): Path to annotation file (will be generated if not exists)
+        csv_root (str, optional): Directory containing CSV files (for new structure)
+            If None, expects old structure with CSV in each scene directory
+            If set, expects CSV files named {scene_num}.csv (e.g., 0.csv, 1.csv, ...)
         queue_length (int): Number of historical frames
         past_frames (int): Number of past frames for history trajectory
         future_frames (int): Number of future frames for prediction
@@ -87,6 +113,7 @@ class SUScapeOrionDataset(Custom3DDataset):
         future_frames=6,
         point_cloud_range=[-51.2, -51.2, -5.0, 51.2, 51.2, 3.0],
         polyline_points_num=20,
+        csv_root=None,  # Path to directory containing CSV files (e.g., 'suscape_scene_traj_csv_alldistance_fixyaw')
         *args,
         eval_mode=['det'],
         **kwargs
@@ -98,6 +125,7 @@ class SUScapeOrionDataset(Custom3DDataset):
         self.eval_cfg = eval_cfg if eval_cfg is not None else {}
         self.sample_interval = sample_interval
         self.past_frames = past_frames
+        self.csv_root = csv_root  # Store CSV root directory
         self.future_frames = future_frames
         self.point_cloud_range = np.array(point_cloud_range)
         self.polyline_points_num = polyline_points_num
@@ -136,11 +164,33 @@ class SUScapeOrionDataset(Custom3DDataset):
         return data_infos
     
     def _generate_annotations_from_suscape(self):
-        """Generate annotations by scanning SUScape raws directory and parsing CSV files."""
-        raws_dir = osp.join(self.data_root, 'raws')
-        if not osp.exists(raws_dir):
-            raise FileNotFoundError(f'SUScape raws directory not found: {raws_dir}')
+        """Generate annotations by scanning SUScape scene directories and CSV files.
         
+        Supports two directory structures:
+        1. Old structure: data_root/raws/scene-XXXXXX/0.csv + cameras
+        2. New structure: data_root/scene-XXXXXX/cameras + csv_root/X.csv
+        """
+        # Try new structure first (scenes in data_root, CSVs in csv_root)
+        if self.csv_root is not None:
+            return self._generate_annotations_new_structure()
+        
+        # Fall back to old structure (raws/ subdirectory)
+        raws_dir = osp.join(self.data_root, 'raws')
+        if osp.exists(raws_dir):
+            return self._generate_annotations_old_structure(raws_dir)
+        
+        # Try scenes directly in data_root
+        scene_dirs = sorted([d for d in os.listdir(self.data_root) 
+                           if osp.isdir(osp.join(self.data_root, d)) and d.startswith('scene-')])
+        if scene_dirs:
+            print(f'Warning: Found scenes in {self.data_root} but no csv_root specified.')
+            print(f'Please set csv_root parameter to the directory containing CSV files.')
+            raise ValueError(f'csv_root parameter is required when scenes are in {self.data_root}')
+        
+        raise FileNotFoundError(f'No SUScape scenes found in {self.data_root} or {raws_dir}')
+    
+    def _generate_annotations_old_structure(self, raws_dir):
+        """Generate annotations from old structure: raws/scene-XXXXXX/0.csv + cameras"""
         data_infos = []
         scene_dirs = sorted([d for d in os.listdir(raws_dir) if d.startswith('scene-')])
         
@@ -153,6 +203,45 @@ class SUScapeOrionDataset(Custom3DDataset):
             if not osp.exists(csv_file):
                 print(f'Warning: CSV file not found in {scene_dir}, skipping...')
                 continue
+            
+            # Parse CSV file
+            scene_infos = self._parse_csv_file(csv_file, scene_dir, scene_name)
+            data_infos.extend(scene_infos)
+        
+        return data_infos
+    
+    def _generate_annotations_new_structure(self):
+        """Generate annotations from new structure: data_root/scene-XXXXXX/cameras + csv_root/X.csv
+        
+        In this structure:
+        - Scenes are directly in data_root (e.g., data_root/scene-000000/)
+        - CSV files are in csv_root with numeric names (e.g., csv_root/0.csv, 1.csv, ...)
+        - CSV filename number corresponds to scene number (0.csv -> scene-000000)
+        """
+        data_infos = []
+        
+        # Find all scene directories
+        scene_dirs = sorted([d for d in os.listdir(self.data_root) 
+                           if osp.isdir(osp.join(self.data_root, d)) and d.startswith('scene-')])
+        
+        print(f'Found {len(scene_dirs)} scenes in {self.data_root}')
+        print(f'Looking for CSV files in {self.csv_root}')
+        
+        for scene_name in mmcv.track_iter_progress(scene_dirs):
+            # Extract scene number from scene name (e.g., 'scene-000000' -> 0)
+            try:
+                scene_num = int(scene_name.split('-')[1])
+            except (IndexError, ValueError):
+                print(f'Warning: Cannot parse scene number from {scene_name}, skipping...')
+                continue
+            
+            # Look for corresponding CSV file (e.g., 0.csv for scene-000000)
+            csv_file = osp.join(self.csv_root, f'{scene_num}.csv')
+            if not osp.exists(csv_file):
+                print(f'Warning: CSV file not found: {csv_file}, skipping...')
+                continue
+            
+            scene_dir = osp.join(self.data_root, scene_name)
             
             # Parse CSV file
             scene_infos = self._parse_csv_file(csv_file, scene_dir, scene_name)
@@ -239,7 +328,12 @@ class SUScapeOrionDataset(Custom3DDataset):
             # Find image file for this frame
             img_files = sorted([f for f in os.listdir(cam_dir) if f.endswith(('.jpg', '.png'))])
             if frame_idx < len(img_files):
-                img_path = osp.join('raws', scene_name, cam_name, img_files[frame_idx])
+                # Construct relative path from data_root
+                # If scene_dir contains 'raws/', keep it; otherwise use scene_name directly
+                if 'raws' in scene_dir:
+                    img_path = osp.join('raws', scene_name, cam_name, img_files[frame_idx])
+                else:
+                    img_path = osp.join(scene_name, cam_name, img_files[frame_idx])
                 
                 # Default camera intrinsics (can be adjusted based on actual camera specs)
                 intrinsic = self._get_default_intrinsic()

@@ -91,43 +91,108 @@ def verify_scene(scene_dir):
     return csv_ok
 
 
-def verify_suscape_dataset(data_root):
-    """Verify the entire SUScape dataset."""
+def verify_suscape_dataset(data_root, csv_root=None):
+    """Verify the entire SUScape dataset.
+    
+    Args:
+        data_root: Path to directory containing scene folders
+        csv_root: Optional path to directory containing CSV files (for new structure)
+    """
     data_root = Path(data_root)
-    raws_dir = data_root / 'raws'
     
     print("=" * 60)
     print("SUScape Dataset Structure Verification")
     print("=" * 60)
     
-    # Check if raws directory exists
-    if not raws_dir.exists():
-        print(f"\n❌ ERROR: 'raws' directory not found at {raws_dir}")
-        print(f"   Expected structure:")
-        print(f"   {data_root}/")
-        print(f"   └── raws/")
-        print(f"       ├── scene-000000/")
-        print(f"       ├── scene-000001/")
-        print(f"       └── ...")
-        return False
-    
-    print(f"\n✓ Found raws directory: {raws_dir}")
+    # Check for old structure (with raws/ subdirectory)
+    raws_dir = data_root / 'raws'
+    if raws_dir.exists():
+        print(f"\n✓ Found 'raws' directory - using OLD structure")
+        print(f"  Scenes location: {raws_dir}")
+        print(f"  CSV location: Inside each scene directory (0.csv)")
+        scene_parent = raws_dir
+        structure_type = 'old'
+    else:
+        # Check for new structure (scenes directly in data_root)
+        scene_dirs_test = sorted([d for d in data_root.iterdir() 
+                                 if d.is_dir() and d.name.startswith('scene-')])
+        if scene_dirs_test:
+            print(f"\n✓ Found scenes directly in data_root - using NEW structure")
+            print(f"  Scenes location: {data_root}")
+            if csv_root:
+                csv_path = Path(csv_root)
+                if csv_path.exists():
+                    print(f"  CSV location: {csv_root}")
+                else:
+                    print(f"\n❌ ERROR: Specified csv_root not found: {csv_root}")
+                    return False
+            else:
+                print(f"\n⚠ WARNING: csv_root not specified for new structure")
+                print(f"  Please provide csv_root parameter pointing to CSV directory")
+                return False
+            scene_parent = data_root
+            structure_type = 'new'
+        else:
+            print(f"\n❌ ERROR: No scene directories found")
+            print(f"   Checked for:")
+            print(f"   - Old structure: {raws_dir}/scene-XXXXXX/")
+            print(f"   - New structure: {data_root}/scene-XXXXXX/")
+            return False
     
     # Find all scene directories
-    scene_dirs = sorted([d for d in raws_dir.iterdir() if d.is_dir() and d.name.startswith('scene-')])
+    scene_dirs = sorted([d for d in scene_parent.iterdir() 
+                        if d.is_dir() and d.name.startswith('scene-')])
     
     if not scene_dirs:
-        print(f"\n❌ ERROR: No scene directories found in {raws_dir}")
-        print(f"   Scene directories should be named 'scene-XXXXXX'")
+        print(f"\n❌ ERROR: No scene directories found in {scene_parent}")
         return False
     
     print(f"✓ Found {len(scene_dirs)} scene directories")
     
-    # Verify each scene
+    # Verify each scene based on structure type
     valid_scenes = 0
-    for scene_dir in scene_dirs:
-        if verify_scene(scene_dir):
-            valid_scenes += 1
+    if structure_type == 'old':
+        for scene_dir in scene_dirs:
+            if verify_scene(scene_dir):
+                valid_scenes += 1
+    else:  # new structure
+        csv_path = Path(csv_root)
+        for scene_dir in scene_dirs:
+            # Extract scene number
+            try:
+                scene_num = int(scene_dir.name.split('-')[1])
+                csv_file = csv_path / f'{scene_num}.csv'
+                
+                print(f"\n  Checking scene: {scene_dir.name}")
+                
+                # Check CSV
+                if not csv_file.exists():
+                    print(f"    ❌ CSV file not found: {csv_file}")
+                    continue
+                
+                csv_ok, csv_msg = check_csv_format(csv_file)
+                if csv_ok:
+                    print(f"    ✓ CSV format: {csv_msg}")
+                else:
+                    print(f"    ❌ CSV format: {csv_msg}")
+                    continue
+                
+                # Check cameras
+                cam_results = check_camera_dirs(scene_dir)
+                all_cams_ok = True
+                for cam_name, (exists, num_imgs) in cam_results.items():
+                    if exists:
+                        print(f"    ✓ {cam_name}: {num_imgs} images")
+                    else:
+                        print(f"    ⚠ {cam_name}: Not found")
+                        all_cams_ok = False
+                
+                if csv_ok:
+                    valid_scenes += 1
+                    
+            except (IndexError, ValueError):
+                print(f"  ❌ Cannot parse scene number from {scene_dir.name}")
+                continue
     
     # Summary
     print("\n" + "=" * 60)
@@ -152,12 +217,15 @@ def verify_suscape_dataset(data_root):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python verify_suscape_dataset.py <path_to_suscape_scenes>")
-        print("Example: python verify_suscape_dataset.py data/suscape_scenes")
+        print("Usage: python verify_suscape_dataset.py <path_to_scenes> [csv_root]")
+        print("Examples:")
+        print("  Old structure: python verify_suscape_dataset.py data/suscape_scenes")
+        print("  New structure: python verify_suscape_dataset.py data/suscape_scenes data/suscape_scene_traj_csv_alldistance_fixyaw")
         sys.exit(1)
     
     data_root = sys.argv[1]
-    success = verify_suscape_dataset(data_root)
+    csv_root = sys.argv[2] if len(sys.argv) > 2 else None
+    success = verify_suscape_dataset(data_root, csv_root)
     sys.exit(0 if success else 1)
 
 
