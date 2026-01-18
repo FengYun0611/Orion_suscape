@@ -168,7 +168,12 @@ class SUScapeOrionDataset(Custom3DDataset):
             self._load_qa_dataset()
     
     def _load_qa_dataset(self):
-        """Load QA dataset JSON files for specified tasks."""
+        """Load QA dataset JSON files for specified tasks.
+        
+        Supports multiple ID formats:
+        - scene-000000_frame_0000 (old format)
+        - scene-000000_7_q7 (new format, where 7 is frame number)
+        """
         print(f"Loading QA dataset from {self.qa_root} for tasks: {self.qa_tasks}")
         
         for task in self.qa_tasks:
@@ -180,15 +185,45 @@ class SUScapeOrionDataset(Custom3DDataset):
                     # QA data structure: list of dicts with 'id', 'image', 'conversations', etc.
                     self.qa_data[task] = {}
                     for qa_item in qa_list:
-                        # Extract scene and frame from image path or id
-                        # Example id format: "scene-000000_frame_0000"
+                        # Extract scene and frame from id
+                        # Support multiple formats:
+                        # 1. scene-000000_frame_0000 (old format)
+                        # 2. scene-000000_7_q7 (new format, where 7 is frame number)
                         item_id = qa_item.get('id', '')
+                        
+                        scene_name = None
+                        frame_idx = None
+                        
                         if '_frame_' in item_id:
+                            # Old format: scene-000000_frame_0000
                             scene_name, frame_part = item_id.split('_frame_')
                             frame_idx = int(frame_part)
+                        elif f'_{task}' in item_id:
+                            # New format: scene-000000_7_q7
+                            # Split by underscore and extract scene and frame
+                            parts = item_id.split('_')
+                            if len(parts) >= 3:
+                                # scene-000000_7_q7 -> ['scene-000000', '7', 'q7']
+                                scene_name = parts[0]
+                                try:
+                                    frame_idx = int(parts[1])
+                                except (ValueError, IndexError):
+                                    continue
+                        else:
+                            # Try to parse generic format
+                            parts = item_id.split('_')
+                            if len(parts) >= 2:
+                                scene_name = parts[0]
+                                try:
+                                    frame_idx = int(parts[1])
+                                except (ValueError, IndexError):
+                                    continue
+                        
+                        if scene_name and frame_idx is not None:
                             if scene_name not in self.qa_data[task]:
                                 self.qa_data[task][scene_name] = {}
                             self.qa_data[task][scene_name][frame_idx] = qa_item
+                    
                 print(f"Loaded {len(qa_list)} QA items for task {task}")
             else:
                 print(f"Warning: QA file not found: {qa_file}")
@@ -235,6 +270,13 @@ class SUScapeOrionDataset(Custom3DDataset):
         The q7 task should provide trajectory in a structured format.
         This method extracts numerical coordinates.
         
+        Supports multiple formats:
+        - [x, y]: [5.15, 0.02], [10.31, 0.05], ... (SUScape format)
+        - (x, y), (x, y), ...
+        - x: value, y: value
+        
+        Note: SUScape coordinate system: +x = forward, +y = left (in meters)
+        
         Args:
             qa_text (str): QA answer text containing trajectory
             
@@ -243,9 +285,17 @@ class SUScapeOrionDataset(Custom3DDataset):
         """
         import re
         
-        # Try to find coordinate patterns like (x, y) or [x, y]
-        # Pattern for numbers: integers or floats including negative
-        coord_pattern = r'[\[\(]\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*[\]\)]'
+        # Primary pattern: [x, y] format (SUScape format)
+        # Matches: [5.15, 0.02] or [10.31, 0.05]
+        coord_pattern = r'\[(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\]'
+        matches = re.findall(coord_pattern, qa_text)
+        
+        if matches:
+            trajectory = np.array([[float(x), float(y)] for x, y in matches], dtype=np.float32)
+            return trajectory
+        
+        # Fallback pattern: (x, y) format
+        coord_pattern = r'\((-?\d+\.?\d*),\s*(-?\d+\.?\d*)\)'
         matches = re.findall(coord_pattern, qa_text)
         
         if matches:
@@ -409,7 +459,16 @@ class SUScapeOrionDataset(Custom3DDataset):
         return frame_infos
     
     def _build_frame_info(self, scene_name, scene_dir, frame_idx, timestamp, ego_data, objects_data):
-        """Build frame information dictionary."""
+        """Build frame information dictionary.
+        
+        Supports multiple camera directory structures:
+        1. Old: scene-XXXXXX/CAM_FRONT/
+        2. New: scene-XXXXXX/camera/front/
+        
+        Image naming:
+        - Old: Frame index-based (0.jpg, 1.jpg, ...)
+        - New: Timestamp-based (1630376940.500.jpg, ...)
+        """
         
         # Ego vehicle information
         ego_x, ego_y = ego_data['X'], ego_data['Y']
@@ -419,8 +478,15 @@ class SUScapeOrionDataset(Custom3DDataset):
         ego_dyaw = ego_data['DYAW'] * np.pi / 180
         
         # Build camera paths (assuming standard camera naming)
-        camera_names = ['CAM_FRONT', 'CAM_FRONT_LEFT', 'CAM_FRONT_RIGHT',
-                       'CAM_BACK', 'CAM_BACK_LEFT', 'CAM_BACK_RIGHT']
+        # Support both old (CAM_FRONT) and new (camera/front) structures
+        camera_mapping = {
+            'CAM_FRONT': 'front',
+            'CAM_FRONT_LEFT': 'front_left',
+            'CAM_FRONT_RIGHT': 'front_right',
+            'CAM_BACK': 'rear',
+            'CAM_BACK_LEFT': 'rear_left',
+            'CAM_BACK_RIGHT': 'rear_right',
+        }
         
         sensors = {}
         
@@ -439,21 +505,44 @@ class SUScapeOrionDataset(Custom3DDataset):
         }
         
         # Add camera information
-        for cam_name in camera_names:
+        for cam_name, cam_subdir in camera_mapping.items():
+            # Try old structure first: scene-XXXXXX/CAM_FRONT/
             cam_dir = osp.join(scene_dir, cam_name)
-            if not osp.exists(cam_dir):
-                continue
+            img_path = None
             
-            # Find image file for this frame
-            img_files = sorted([f for f in os.listdir(cam_dir) if f.endswith(('.jpg', '.png'))])
-            if frame_idx < len(img_files):
-                # Construct relative path from data_root
-                # If scene_dir contains 'raws/', keep it; otherwise use scene_name directly
-                if 'raws' in scene_dir:
-                    img_path = osp.join('raws', scene_name, cam_name, img_files[frame_idx])
-                else:
-                    img_path = osp.join(scene_name, cam_name, img_files[frame_idx])
-                
+            if osp.exists(cam_dir):
+                # Old structure - use frame index for image filename
+                img_files = sorted([f for f in os.listdir(cam_dir) if f.endswith(('.jpg', '.png'))])
+                if frame_idx < len(img_files):
+                    if 'raws' in scene_dir:
+                        img_path = osp.join('raws', scene_name, cam_name, img_files[frame_idx])
+                    else:
+                        img_path = osp.join(scene_name, cam_name, img_files[frame_idx])
+            else:
+                # Try new structure: scene-XXXXXX/camera/front/
+                cam_dir = osp.join(scene_dir, 'camera', cam_subdir)
+                if osp.exists(cam_dir):
+                    # New structure - use timestamp for image filename
+                    # Image filename format: timestamp.jpg (e.g., 1630376940.500.jpg)
+                    img_filename = f'{timestamp:.3f}.jpg'
+                    img_file = osp.join(cam_dir, img_filename)
+                    
+                    # Check if file exists
+                    if osp.exists(img_file):
+                        if 'raws' in scene_dir:
+                            img_path = osp.join('raws', scene_name, 'camera', cam_subdir, img_filename)
+                        else:
+                            img_path = osp.join(scene_name, 'camera', cam_subdir, img_filename)
+                    else:
+                        # Fallback: try to find image by index
+                        img_files = sorted([f for f in os.listdir(cam_dir) if f.endswith(('.jpg', '.png'))])
+                        if frame_idx < len(img_files):
+                            if 'raws' in scene_dir:
+                                img_path = osp.join('raws', scene_name, 'camera', cam_subdir, img_files[frame_idx])
+                            else:
+                                img_path = osp.join(scene_name, 'camera', cam_subdir, img_files[frame_idx])
+            
+            if img_path is not None:
                 # Default camera intrinsics (can be adjusted based on actual camera specs)
                 intrinsic = self._get_default_intrinsic()
                 cam2ego = self._get_default_cam2ego(cam_name)
