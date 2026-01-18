@@ -860,10 +860,15 @@ class SUScapeOrionDataset(Custom3DDataset):
     
     def evaluate(self, results, metric='bbox', logger=None, jsonfile_prefix=None, 
                  result_names=['pts_bbox'], show=False, out_dir=None, pipeline=None):
-        """Evaluate planning metrics (L2 and collision rate)."""
+        """Evaluate planning metrics (L2 and collision rate).
+        
+        Computes metrics at 1s, 2s, 3s and their averages.
+        """
         
         print('\n')
-        print('-------------- Planning Metrics --------------')
+        print('=' * 60)
+        print('Planning Metrics Evaluation (SUScape QA Dataset)')
+        print('=' * 60)
         metric_dict = None
         num_valid = 0
         
@@ -880,11 +885,54 @@ class SUScapeOrionDataset(Custom3DDataset):
                     metric_dict[k] += res['metric_results'][k]
         
         if metric_dict is not None and num_valid > 0:
+            # Compute averages
             for k in metric_dict:
                 if k != 'fut_valid_flag':
                     metric_dict[k] = metric_dict[k] / num_valid
-                print(f"{k}: {metric_dict[k]}")
+            
+            # Compute average across time horizons
+            metric_dict['plan_L2_avg'] = (
+                metric_dict['plan_L2_1s'] + 
+                metric_dict['plan_L2_2s'] + 
+                metric_dict['plan_L2_3s']
+            ) / 3.0
+            
+            metric_dict['plan_obj_col_avg'] = (
+                metric_dict['plan_obj_col_1s'] + 
+                metric_dict['plan_obj_col_2s'] + 
+                metric_dict['plan_obj_col_3s']
+            ) / 3.0
+            
+            metric_dict['plan_obj_box_col_avg'] = (
+                metric_dict['plan_obj_box_col_1s'] + 
+                metric_dict['plan_obj_box_col_2s'] + 
+                metric_dict['plan_obj_box_col_3s']
+            ) / 3.0
+            
+            # Print results in organized format
+            print(f"\nTotal valid samples: {num_valid}\n")
+            
+            print("L2 Trajectory Error (meters):")
+            print(f"  1s: {metric_dict['plan_L2_1s']:.4f}")
+            print(f"  2s: {metric_dict['plan_L2_2s']:.4f}")
+            print(f"  3s: {metric_dict['plan_L2_3s']:.4f}")
+            print(f"  Avg: {metric_dict['plan_L2_avg']:.4f}")
+            
+            print("\nObject Collision Rate:")
+            print(f"  1s: {metric_dict['plan_obj_col_1s']:.4f}")
+            print(f"  2s: {metric_dict['plan_obj_col_2s']:.4f}")
+            print(f"  3s: {metric_dict['plan_obj_col_3s']:.4f}")
+            print(f"  Avg: {metric_dict['plan_obj_col_avg']:.4f}")
+            
+            print("\nBounding Box Collision Rate:")
+            print(f"  1s: {metric_dict['plan_obj_box_col_1s']:.4f}")
+            print(f"  2s: {metric_dict['plan_obj_box_col_2s']:.4f}")
+            print(f"  3s: {metric_dict['plan_obj_box_col_3s']:.4f}")
+            print(f"  Avg: {metric_dict['plan_obj_box_col_avg']:.4f}")
+            
+            print('\n' + '=' * 60)
         else:
             print("No valid samples for evaluation")
+            metric_dict = {}
         
-        return metric_dict if metric_dict is not None else {}
+        return metric_dict
