@@ -210,6 +210,8 @@ dataset_type = "SUScapeOrionDataset"
 # For new structure (separate CSV directory):
 data_root = "data/suscape_scenes"  # Directory containing scene-XXXXXX folders
 csv_root = "data/suscape_scene_traj_csv_alldistance_fixyaw"  # Directory containing X.csv files
+qa_root = "data/sharegpt_dataset"  # QA dataset directory (optional but recommended for better GT)
+qa_tasks = ["q7"]  # QA tasks to use: q7 for trajectory prediction
 # For old structure (CSV in scene directories), set csv_root=None
 
 info_root = "data/suscape_infos"
@@ -256,7 +258,9 @@ data = dict(
     test=dict(
         type=dataset_type,
         data_root=data_root,
-        csv_root=csv_root,  # Add csv_root parameter
+        csv_root=csv_root,  # CSV trajectory data
+        qa_root=qa_root,  # QA dataset for GT trajectories
+        qa_tasks=qa_tasks,  # QA tasks to load
         ann_file=ann_file_test,
         pipeline=test_pipeline,
         classes=class_names,

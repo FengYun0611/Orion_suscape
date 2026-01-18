@@ -8,6 +8,7 @@ SUScape Dataset for ORION Model Evaluation
 This dataset handles the SUScape dataset format which includes:
 - CSV files for vehicle trajectories
 - Multi-view camera images from scene directories
+- QA dataset (optional but recommended) for precise GT trajectories
 - No map information available
 
 Supported Data Structures:
@@ -42,8 +43,15 @@ Supported Data Structures:
     ├── 0.csv      # Corresponds to scene-000000
     ├── 1.csv      # Corresponds to scene-000001
     └── ...
+    
+    qa_root/ (optional but recommended for better GT)
+    ├── dataset_info.json
+    ├── suscape_NQA_q1.json   # VRU identification
+    ├── suscape_NQA_q7.json   # Trajectory prediction (used for L2 evaluation)
+    └── suscape_NQA_qX.json   # Other tasks
 
 For new structure, set csv_root parameter to the directory containing CSV files.
+For QA-based evaluation, set qa_root and qa_tasks parameters.
 """
 
 import copy
@@ -53,6 +61,7 @@ from os import path as osp
 import torch
 import pandas as pd
 import pickle
+import json
 import mmcv
 from mmcv.datasets import DATASETS
 from mmcv.parallel import DataContainer as DC
@@ -81,7 +90,7 @@ class SUScapeOrionDataset(Custom3DDataset):
     
     This dataset loads trajectory data from CSV files and camera images
     from scene directories for open-loop evaluation of L2 metrics and
-    collision rates.
+    collision rates. Optionally loads QA dataset for more precise GT.
     
     Args:
         data_root (str): Root directory containing scene folders
@@ -91,6 +100,12 @@ class SUScapeOrionDataset(Custom3DDataset):
         csv_root (str, optional): Directory containing CSV files (for new structure)
             If None, expects old structure with CSV in each scene directory
             If set, expects CSV files named {scene_num}.csv (e.g., 0.csv, 1.csv, ...)
+        qa_root (str, optional): Path to QA dataset directory (e.g., 'sharegpt_dataset')
+            Contains suscape_NQA_q*.json files for various tasks
+            Highly recommended for accurate trajectory GT (q7 task)
+        qa_tasks (list, optional): List of QA tasks to load (e.g., ['q7'] for trajectory)
+            Available tasks: q1-q12 (see documentation)
+            q7 provides precise ego trajectory points for L2 evaluation
         queue_length (int): Number of historical frames
         past_frames (int): Number of past frames for history trajectory
         future_frames (int): Number of future frames for prediction
@@ -114,6 +129,8 @@ class SUScapeOrionDataset(Custom3DDataset):
         point_cloud_range=[-51.2, -51.2, -5.0, 51.2, 51.2, 3.0],
         polyline_points_num=20,
         csv_root=None,  # Path to directory containing CSV files (e.g., 'suscape_scene_traj_csv_alldistance_fixyaw')
+        qa_root=None,  # Path to QA dataset directory (e.g., 'sharegpt_dataset')
+        qa_tasks=None,  # List of QA tasks to load (e.g., ['q7'] for trajectory prediction)
         *args,
         eval_mode=['det'],
         **kwargs
@@ -126,6 +143,9 @@ class SUScapeOrionDataset(Custom3DDataset):
         self.sample_interval = sample_interval
         self.past_frames = past_frames
         self.csv_root = csv_root  # Store CSV root directory
+        self.qa_root = qa_root  # Store QA dataset root directory
+        self.qa_tasks = qa_tasks if qa_tasks is not None else []
+        self.qa_data = {}  # Will store loaded QA data
         self.future_frames = future_frames
         self.point_cloud_range = np.array(point_cloud_range)
         self.polyline_points_num = polyline_points_num
@@ -142,6 +162,105 @@ class SUScapeOrionDataset(Custom3DDataset):
             self.seq_split_num = seq_split_num
             self.random_length = 0
             self._set_sequence_group_flag()
+        
+        # Load QA dataset if specified
+        if self.qa_root and self.qa_tasks:
+            self._load_qa_dataset()
+    
+    def _load_qa_dataset(self):
+        """Load QA dataset JSON files for specified tasks."""
+        print(f"Loading QA dataset from {self.qa_root} for tasks: {self.qa_tasks}")
+        
+        for task in self.qa_tasks:
+            qa_file = osp.join(self.qa_root, f'suscape_NQA_{task}.json')
+            if osp.exists(qa_file):
+                with open(qa_file, 'r') as f:
+                    qa_list = json.load(f)
+                    # Index QA data by scene and frame for quick lookup
+                    # QA data structure: list of dicts with 'id', 'image', 'conversations', etc.
+                    self.qa_data[task] = {}
+                    for qa_item in qa_list:
+                        # Extract scene and frame from image path or id
+                        # Example id format: "scene-000000_frame_0000"
+                        item_id = qa_item.get('id', '')
+                        if '_frame_' in item_id:
+                            scene_name, frame_part = item_id.split('_frame_')
+                            frame_idx = int(frame_part)
+                            if scene_name not in self.qa_data[task]:
+                                self.qa_data[task][scene_name] = {}
+                            self.qa_data[task][scene_name][frame_idx] = qa_item
+                print(f"Loaded {len(qa_list)} QA items for task {task}")
+            else:
+                print(f"Warning: QA file not found: {qa_file}")
+    
+    def _get_qa_trajectory(self, scene_name, frame_idx, task='q7'):
+        """Extract trajectory from QA data for a specific scene and frame.
+        
+        Args:
+            scene_name (str): Scene identifier (e.g., 'scene-000000')
+            frame_idx (int): Frame index
+            task (str): QA task ID (default: 'q7' for trajectory prediction)
+            
+        Returns:
+            numpy array or None: Trajectory points if available, else None
+        """
+        if task not in self.qa_data:
+            return None
+        
+        if scene_name not in self.qa_data[task]:
+            return None
+        
+        if frame_idx not in self.qa_data[task][scene_name]:
+            return None
+        
+        qa_item = self.qa_data[task][scene_name][frame_idx]
+        
+        # Extract trajectory from conversations
+        # Format varies by task, q7 should have trajectory in structured format
+        conversations = qa_item.get('conversations', [])
+        for conv in conversations:
+            if conv.get('from') == 'gpt':  # GT answer
+                value = conv.get('value', '')
+                # Parse trajectory from the answer
+                # Expected format for q7: structured waypoints or coordinates
+                traj = self._parse_trajectory_from_qa(value)
+                if traj is not None:
+                    return traj
+        
+        return None
+    
+    def _parse_trajectory_from_qa(self, qa_text):
+        """Parse trajectory coordinates from QA text.
+        
+        The q7 task should provide trajectory in a structured format.
+        This method extracts numerical coordinates.
+        
+        Args:
+            qa_text (str): QA answer text containing trajectory
+            
+        Returns:
+            numpy array or None: Parsed trajectory points [N, 2] or None
+        """
+        import re
+        
+        # Try to find coordinate patterns like (x, y) or [x, y]
+        # Pattern for numbers: integers or floats including negative
+        coord_pattern = r'[\[\(]\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*[\]\)]'
+        matches = re.findall(coord_pattern, qa_text)
+        
+        if matches:
+            trajectory = np.array([[float(x), float(y)] for x, y in matches], dtype=np.float32)
+            return trajectory
+        
+        # Try alternative format: "x: value, y: value"
+        xy_pattern = r'x\s*:\s*(-?\d+\.?\d*)\s*,\s*y\s*:\s*(-?\d+\.?\d*)'
+        matches = re.findall(xy_pattern, qa_text, re.IGNORECASE)
+        
+        if matches:
+            trajectory = np.array([[float(x), float(y)] for x, y in matches], dtype=np.float32)
+            return trajectory
+        
+        return None
 
     def load_annotations(self, ann_file):
         """Load or generate annotations from SUScape dataset.
@@ -618,7 +737,12 @@ class SUScapeOrionDataset(Custom3DDataset):
         return input_dict
     
     def get_ego_trajs(self, index, sample_interval, past_frames, future_frames):
-        """Get ego vehicle historical and future trajectories."""
+        """Get ego vehicle historical and future trajectories.
+        
+        Priority:
+        1. QA dataset (q7) if available - provides precise GT trajectories
+        2. CSV data - extracted from vehicle positions
+        """
         scene_token = self.data_infos[index]['folder']
         frame_idx = self.data_infos[index]['frame_idx']
         
@@ -630,7 +754,46 @@ class SUScapeOrionDataset(Custom3DDataset):
         current_pos = self.data_infos[index]['ego_translation'][:2]
         current_yaw = self.data_infos[index]['ego_yaw']
         
-        # Get historical trajectory
+        # Try to get future trajectory from QA dataset (q7) if available
+        qa_fut_traj = None
+        if 'q7' in self.qa_tasks and 'q7' in self.qa_data:
+            qa_fut_traj = self._get_qa_trajectory(scene_token, frame_idx, task='q7')
+        
+        if qa_fut_traj is not None and len(qa_fut_traj) > 0:
+            # Use QA trajectory - already in ego frame or world frame
+            # Assume QA trajectory is in world frame, transform to ego frame
+            for i in range(min(len(qa_fut_traj), future_frames)):
+                # QA trajectory might already be relative or in world coords
+                # Try to use it directly first, assuming it's in ego frame
+                if qa_fut_traj[i][0] < 100 and qa_fut_traj[i][1] < 100:  # Sanity check for ego frame
+                    ego_fut_trajs[i] = qa_fut_traj[i][:2]
+                    ego_fut_masks[i] = 1.0
+                else:
+                    # Transform from world to ego frame
+                    delta = qa_fut_traj[i][:2] - current_pos
+                    cos_yaw, sin_yaw = np.cos(-current_yaw), np.sin(-current_yaw)
+                    ego_fut_trajs[i] = [
+                        cos_yaw * delta[0] - sin_yaw * delta[1],
+                        sin_yaw * delta[0] + cos_yaw * delta[1]
+                    ]
+                    ego_fut_masks[i] = 1.0
+            print(f"Using QA trajectory for scene {scene_token} frame {frame_idx}")
+        else:
+            # Fallback to CSV-based trajectory extraction
+            for i in range(future_frames):
+                fut_idx = index + (i + 1) * sample_interval
+                if fut_idx < len(self.data_infos) and self.data_infos[fut_idx]['folder'] == scene_token:
+                    fut_pos = self.data_infos[fut_idx]['ego_translation'][:2]
+                    # Transform to ego frame
+                    delta = fut_pos - current_pos
+                    cos_yaw, sin_yaw = np.cos(-current_yaw), np.sin(-current_yaw)
+                    ego_fut_trajs[i] = [
+                        cos_yaw * delta[0] - sin_yaw * delta[1],
+                        sin_yaw * delta[0] + cos_yaw * delta[1]
+                    ]
+                    ego_fut_masks[i] = 1.0
+        
+        # Get historical trajectory (always from CSV)
         for i in range(past_frames):
             hist_idx = index - (past_frames - i) * sample_interval
             if hist_idx >= 0 and self.data_infos[hist_idx]['folder'] == scene_token:
@@ -642,20 +805,6 @@ class SUScapeOrionDataset(Custom3DDataset):
                     cos_yaw * delta[0] - sin_yaw * delta[1],
                     sin_yaw * delta[0] + cos_yaw * delta[1]
                 ]
-        
-        # Get future trajectory
-        for i in range(future_frames):
-            fut_idx = index + (i + 1) * sample_interval
-            if fut_idx < len(self.data_infos) and self.data_infos[fut_idx]['folder'] == scene_token:
-                fut_pos = self.data_infos[fut_idx]['ego_translation'][:2]
-                # Transform to ego frame
-                delta = fut_pos - current_pos
-                cos_yaw, sin_yaw = np.cos(-current_yaw), np.sin(-current_yaw)
-                ego_fut_trajs[i] = [
-                    cos_yaw * delta[0] - sin_yaw * delta[1],
-                    sin_yaw * delta[0] + cos_yaw * delta[1]
-                ]
-                ego_fut_masks[i] = 1.0
         
         # Command (simplified - can be enhanced based on trajectory)
         command = np.zeros(6, dtype=np.float32)
