@@ -433,6 +433,12 @@ class SUScapeOrionDataset(Custom3DDataset):
         """
         df = pd.read_csv(csv_file, sep='\t')
         
+        # Debug: Print column names if TIMESTAMP is missing
+        if 'TIMESTAMP' not in df.columns:
+            print(f"ERROR: CSV file {csv_file} columns: {df.columns.tolist()}")
+            print(f"First few rows:\n{df.head()}")
+            raise KeyError(f"'TIMESTAMP' column not found in CSV file {csv_file}. Available columns: {df.columns.tolist()}")
+        
         # Group by timestamp to get frames
         grouped = df.groupby('TIMESTAMP')
         timestamps = sorted(df['TIMESTAMP'].unique())
