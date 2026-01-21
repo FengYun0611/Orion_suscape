@@ -135,20 +135,24 @@ class SUScapeOrionDataset(Custom3DDataset):
         eval_mode=['det'],
         **kwargs
     ):
+        # Set attributes BEFORE calling super().__init__() because parent's __init__
+        # calls load_annotations() which needs these attributes
+        self.csv_root = csv_root  # Store CSV root directory
+        self.qa_root = qa_root  # Store QA dataset root directory
+        self.qa_tasks = qa_tasks if qa_tasks is not None else []
+        self.qa_data = {}  # Will store loaded QA data
+        self.past_frames = past_frames
+        self.future_frames = future_frames
+        self.point_cloud_range = np.array(point_cloud_range)
+        self.polyline_points_num = polyline_points_num
+        
         super().__init__(*args, **kwargs)
+        
         self.queue_length = queue_length
         self.with_velocity = with_velocity
         self.NameMapping = name_mapping if name_mapping is not None else {}
         self.eval_cfg = eval_cfg if eval_cfg is not None else {}
         self.sample_interval = sample_interval
-        self.past_frames = past_frames
-        self.csv_root = csv_root  # Store CSV root directory
-        self.qa_root = qa_root  # Store QA dataset root directory
-        self.qa_tasks = qa_tasks if qa_tasks is not None else []
-        self.qa_data = {}  # Will store loaded QA data
-        self.future_frames = future_frames
-        self.point_cloud_range = np.array(point_cloud_range)
-        self.polyline_points_num = polyline_points_num
         self.eval_mode = eval_mode
         
         # SUScape doesn't have map information
