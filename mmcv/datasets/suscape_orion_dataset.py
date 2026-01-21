@@ -70,6 +70,7 @@ from .custom_3d import Custom3DDataset
 from nuscenes.eval.common.utils import quaternion_yaw, Quaternion
 from mmcv.datasets.map_utils.mean_ap import eval_map
 from .nuscenes_styled_eval_utils import DetectionMetrics, EvalBoxes, DetectionBox, center_distance
+from mmcv.fileio.io import dump  # Import dump directly to avoid circular import
 import math
 
 
@@ -331,7 +332,7 @@ class SUScapeOrionDataset(Custom3DDataset):
         
         # Save generated annotations
         mmcv.mkdir_or_exist(osp.dirname(ann_file))
-        mmcv.dump(data_infos, ann_file)
+        dump(data_infos, ann_file)  # Use dump from mmcv.fileio.io
         print(f'Saved {len(data_infos)} annotations to {ann_file}')
         
         return data_infos
