@@ -35,16 +35,18 @@ ida_aug_conf = {
         "rand_flip": False,
     }
 
-# Object classes for SUScape (based on CSV OBJECT_TYPE)
-# Map Vehicle, Pedestrian, Bicycle to standard classes
+# Object classes for SUScape - must match checkpoint (9 classes)
+# The checkpoint was trained on nuScenes with 9 classes
+# Map SUScape OBJECT_TYPE to nuScenes classes
 NameMapping = {
     'Vehicle': 'car',
     'Pedestrian': 'pedestrian',
     'Bicycle': 'bicycle',
 }
 
+# Use same 9 classes as training config to match checkpoint weights
 class_names = [
-    'car', 'pedestrian', 'bicycle', 'others'
+    'car', 'van', 'truck', 'bicycle', 'traffic_sign', 'traffic_cone', 'traffic_light', 'pedestrian', 'others'
 ]
 
 eval_cfg = {
@@ -53,6 +55,7 @@ eval_cfg = {
     "min_recall": 0.1,
     "min_precision": 0.1,
     "mean_ap_weight": 5,
+    # Evaluate only classes present in SUScape (car, pedestrian, bicycle)
     "class_names": ['car', 'pedestrian', 'bicycle'],
     "tp_metrics": ['trans_err', 'scale_err', 'orient_err', 'vel_err'],
     "err_name_maping": {'trans_err': 'mATE', 'scale_err': 'mASE', 'orient_err': 'mAOE', 'vel_err': 'mAVE', 'attr_err': 'mAAE'},
@@ -167,8 +170,8 @@ model = dict(
         code_weights=[2.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         score_threshold=0.2,
         class_agnostic_nms=dict(
-            classes=[0, 1, 2, 3],
-            compensate=[0, 0.3, 0, 0],
+            classes=[0, 1, 2, 3, 4, 5, 6, 7, 8],  # All 9 classes
+            compensate=[0, 0.3, 0.3, 0, 0, 0, 0, 0.3, 0],  # Compensate for van, truck, pedestrian
             pre_max_size=1000,
             post_max_size=300,
             nms_thr=0.1,
@@ -201,7 +204,7 @@ model = dict(
             pc_range=point_cloud_range,
             max_num=300,
             voxel_size=voxel_size,
-            num_classes=4)),
+            num_classes=9)),  # Match checkpoint: 9 classes
 )
 
 dataset_type = "SUScapeOrionDataset"
