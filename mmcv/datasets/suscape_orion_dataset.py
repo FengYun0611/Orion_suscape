@@ -431,7 +431,8 @@ class SUScapeOrionDataset(Custom3DDataset):
         Returns:
             list of frame info dicts
         """
-        df = pd.read_csv(csv_file, sep='\t')
+        # Auto-detect delimiter (supports both comma and tab-separated files)
+        df = pd.read_csv(csv_file)
         
         # Debug: Print column names if TIMESTAMP is missing
         if 'TIMESTAMP' not in df.columns:
