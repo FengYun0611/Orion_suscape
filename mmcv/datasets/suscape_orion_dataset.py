@@ -921,8 +921,14 @@ class SUScapeOrionDataset(Custom3DDataset):
         gt_names = info['gt_names']
         gt_ids = info['gt_ids']
         
-        gt_bboxes_3d = gt_boxes[:, :7] if len(gt_boxes) > 0 else np.zeros((0, 7), dtype=np.float32)
+        gt_bboxes_3d_np = gt_boxes[:, :7] if len(gt_boxes) > 0 else np.zeros((0, 7), dtype=np.float32)
         gt_velocities = gt_boxes[:, 7:9] if len(gt_boxes) > 0 else np.zeros((0, 2), dtype=np.float32)
+        
+        # Wrap in LiDARInstance3DBoxes to provide in_range_bev() and other methods
+        gt_bboxes_3d = LiDARInstance3DBoxes(
+            gt_bboxes_3d_np,
+            box_dim=gt_bboxes_3d_np.shape[-1],
+            origin=(0.5, 0.5, 0.5)).convert_to(self.box_mode_3d)
         
         gt_labels_3d = np.array([self.cat2id.get(name, -1) for name in gt_names], dtype=np.int64)
         
