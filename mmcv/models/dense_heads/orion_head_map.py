@@ -311,7 +311,16 @@ class OrionHeadM(AnchorFreeHead):
     def post_update_memory(self, img_metas, data, rec_ego_pose, all_cls_scores, all_bbox_preds, outs_dec):
         rec_reference_points = all_bbox_preds[-1].reshape(outs_dec.shape[1], -1, self.n_control, 3)
         out_memory = outs_dec[-1]
-        rec_score = all_cls_scores[-1].sigmoid().topk(1, dim=-1).values[..., 0:1]
+        
+        # Handle case when num_classes=0 (no map data, e.g., SUScape dataset)
+        if all_cls_scores.shape[-1] == 0:
+            # Use uniform scores when no classes available
+            batch_size, num_queries = all_cls_scores.shape[1], all_cls_scores.shape[2]
+            rec_score = torch.ones(batch_size, num_queries, 1, 
+                                  device=all_cls_scores.device, dtype=torch.float32)
+        else:
+            rec_score = all_cls_scores[-1].sigmoid().topk(1, dim=-1).values[..., 0:1]
+        
         rec_timestamp = torch.zeros_like(rec_score, dtype=torch.float64)
         
         # topk proposals
