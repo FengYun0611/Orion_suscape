@@ -466,7 +466,9 @@ class SUScapeOrionDataset(Custom3DDataset):
                 ego_data, objects_data
             )
             
-            frame_infos.append(frame_info)
+            # Only add if frame_info is not None (has valid camera images)
+            if frame_info is not None:
+                frame_infos.append(frame_info)
         
         return frame_infos
     
@@ -564,6 +566,19 @@ class SUScapeOrionDataset(Custom3DDataset):
                     'intrinsic': intrinsic,
                     'cam2ego': cam2ego,
                 }
+        
+        # Check if we found any camera images
+        camera_count = sum(1 for k in sensors.keys() if 'CAM' in k)
+        if camera_count == 0:
+            print(f"Warning: No camera images found for scene {scene_name}, frame {frame_idx}")
+            print(f"  Scene directory: {scene_dir}")
+            print(f"  Expected camera directories:")
+            for cam_name, cam_subdir in camera_mapping.items():
+                cam_dir_old = osp.join(scene_dir, cam_name)
+                cam_dir_new = osp.join(scene_dir, 'camera', cam_subdir)
+                print(f"    {cam_name}: tried {cam_dir_old} (exists: {osp.exists(cam_dir_old)}) and {cam_dir_new} (exists: {osp.exists(cam_dir_new)})")
+            # Return None to skip this sample
+            return None
         
         # Parse objects (ground truth boxes)
         gt_boxes = []
