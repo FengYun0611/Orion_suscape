@@ -743,6 +743,15 @@ class OrionHeadM(AnchorFreeHead):
                            img_shape,
                            scale_factor,
                            rescale=False):
+        # Handle case when num_classes=0 (no map data, e.g., SUScape dataset)
+        if self.num_classes == 0 or cls_score.numel() == 0:
+            # Return empty predictions when no map classes available
+            return {
+                'map_scores_3d': torch.tensor([], dtype=torch.float32),
+                'map_labels_3d': torch.tensor([], dtype=torch.long),
+                'map_pts_3d': torch.tensor([], dtype=torch.float32),
+            }
+        
         # 修改为输出50条概率最大的，modify by fuhaoyu
         max_num = self.max_num
         assert len(cls_score) == len(bbox_pred)
