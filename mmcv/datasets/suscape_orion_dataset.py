@@ -316,6 +316,51 @@ class SUScapeOrionDataset(Custom3DDataset):
             return trajectory
         
         return None
+    
+    def get_qa_conversations(self, scene_name, frame_idx, tasks=None):
+        """Get QA conversations for multiple tasks to use as LLM context.
+        
+        Args:
+            scene_name (str): Scene identifier (e.g., 'scene-000000')
+            frame_idx (int): Frame index
+            tasks (list, optional): List of QA tasks to retrieve (default: use self.qa_tasks)
+                Recommended: ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q8', 'q9']
+                Skip q7 (used as GT), q10-q12 (safety/comfort metrics)
+        
+        Returns:
+            list: List of conversation dicts in ShareGPT format
+                [
+                    {"from": "human", "value": "question1"},
+                    {"from": "gpt", "value": "answer1"},
+                    {"from": "human", "value": "question2"},
+                    {"from": "gpt", "value": "answer2"},
+                    ...
+                ]
+        """
+        if tasks is None:
+            # Use all loaded tasks except those to skip
+            skip_tasks = {'q7', 'q10', 'q11', 'q12'}  # Skip trajectory GT and evaluation metrics
+            tasks = [t for t in self.qa_tasks if t not in skip_tasks]
+        
+        conversations = []
+        
+        for task in tasks:
+            if task not in self.qa_data:
+                continue
+            
+            if scene_name not in self.qa_data[task]:
+                continue
+            
+            if frame_idx not in self.qa_data[task][scene_name]:
+                continue
+            
+            qa_item = self.qa_data[task][scene_name][frame_idx]
+            task_convs = qa_item.get('conversations', [])
+            
+            # Append conversations from this task
+            conversations.extend(task_convs)
+        
+        return conversations
 
     def load_annotations(self, ann_file):
         """Load or generate annotations from SUScape dataset.
@@ -977,6 +1022,13 @@ class SUScapeOrionDataset(Custom3DDataset):
             attr_labels=attr_labels,
             gt_ids=gt_ids,
         )
+        
+        # Add QA conversations if available (for LLM context)
+        if self.qa_root and self.qa_tasks:
+            scene_name = info.get('scene_name', '')
+            frame_idx = info.get('frame_idx', 0)
+            qa_conversations = self.get_qa_conversations(scene_name, frame_idx)
+            anns_results['qa_conversations'] = qa_conversations
         
         return anns_results
     

@@ -1185,7 +1185,28 @@ class LoadAnnoatationCriticalVQATest():
     
 
     def __call__(self, results):
-        sources = self.preprocess_vqa(results)
+        # Check if pre-annotated QA conversations are available
+        if 'qa_conversations' in results and len(results['qa_conversations']) > 0:
+            # Use pre-annotated QA from ShareGPT dataset
+            qa_convs = results['qa_conversations']
+            
+            # Convert ShareGPT format to sources format
+            # ShareGPT: [{"from": "human", "value": "Q"}, {"from": "gpt", "value": "A"}, ...]
+            # Sources: [[{"from": "human", "value": "Q"}, {"from": "gpt", "value": "A"}], ...]
+            sources = []
+            i = 0
+            while i < len(qa_convs):
+                if qa_convs[i].get('from') == 'human' and i + 1 < len(qa_convs) and qa_convs[i + 1].get('from') == 'gpt':
+                    sources.append([qa_convs[i], qa_convs[i + 1]])
+                    i += 2
+                else:
+                    i += 1
+            
+            print(f"Using {len(sources)} pre-annotated QA pairs from ShareGPT dataset")
+        else:
+            # Fallback to generated VQA (original behavior)
+            sources = self.preprocess_vqa(results)
+        
         prompt = f"You are driving a car."
 
         if self.use_gen_token:

@@ -88,6 +88,9 @@ model = dict(
     use_gen_token=use_gen_token,
     use_diff_decoder=False,
     use_col_loss=use_col_loss,
+    use_critical_qa=True,  # Enable LLM inference with QA context
+    qa_pretrain=False,  # Evaluation mode (not training)
+    mix_qa_training=False,  # Evaluation mode
     img_backbone=dict(
         type='EVAViT',
         img_size=640,
@@ -213,8 +216,11 @@ dataset_type = "SUScapeOrionDataset"
 # For new structure (separate CSV directory):
 data_root = "data/suscape_scenes"  # Directory containing scene-XXXXXX folders
 csv_root = "data/suscape_scene_traj_csv_alldistance_fixyaw"  # Directory containing X.csv files
-qa_root = "data/sharegpt_dataset"  # QA dataset directory (optional but recommended for better GT)
-qa_tasks = ["q7"]  # QA tasks to use: q7 for trajectory prediction
+qa_root = "/lab/haoq_lab/cse12311753/sharegpt_dataset"  # QA dataset directory with ShareGPT format
+qa_tasks = ["q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8", "q9"]  # QA tasks to use
+# q1-q6, q8-q9: Scene understanding for LLM context
+# q7: Trajectory GT for evaluation
+# Skip q10-q12: Safety/comfort/compliance metrics (not needed for LLM context)
 # For old structure (CSV in scene directories), set csv_root=None
 
 info_root = "data/suscape_infos"
