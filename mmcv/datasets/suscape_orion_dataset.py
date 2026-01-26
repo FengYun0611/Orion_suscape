@@ -925,6 +925,16 @@ class SUScapeOrionDataset(Custom3DDataset):
         input_dict['ego_lcf_feat'] = ego_lcf_feat
         input_dict['fut_valid_flag'] = (ego_fut_masks == 1).all()
         
+        # Add QA conversations if available (for LLM context)
+        if self.qa_root and self.qa_tasks:
+            scene_name = info.get('folder', '')
+            timestamp = input_dict.get('timestamp', None)
+            if timestamp is not None:
+                qa_conversations = self.get_qa_conversations(scene_name, int(timestamp))
+                if len(qa_conversations) > 0:
+                    input_dict['qa_conversations'] = qa_conversations
+                    print(f"[DEBUG] Added {len(qa_conversations)} QA conversations to input_dict for {scene_name} timestamp {timestamp}")
+        
         return input_dict
     
     def get_ego_trajs(self, index, sample_interval, past_frames, future_frames):
