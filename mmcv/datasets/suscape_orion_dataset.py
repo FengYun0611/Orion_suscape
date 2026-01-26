@@ -178,6 +178,8 @@ class SUScapeOrionDataset(Custom3DDataset):
         Supports multiple ID formats:
         - scene-000000_frame_0000 (old format)
         - scene-000000_7_q7 (new format, where 7 is frame number)
+        
+        Also creates timestamp-based index for lookup.
         """
         print(f"Loading QA dataset from {self.qa_root} for tasks: {self.qa_tasks}")
         
@@ -190,14 +192,25 @@ class SUScapeOrionDataset(Custom3DDataset):
                     # QA data structure: list of dicts with 'id', 'image', 'conversations', etc.
                     self.qa_data[task] = {}
                     for qa_item in qa_list:
-                        # Extract scene and frame from id
-                        # Support multiple formats:
-                        # 1. scene-000000_frame_0000 (old format)
-                        # 2. scene-000000_7_q7 (new format, where 7 is frame number)
+                        # Extract scene from id
                         item_id = qa_item.get('id', '')
                         
                         scene_name = None
                         frame_idx = None
+                        
+                        # Extract timestamp from image path as primary key
+                        # Image path format: "../../suscape_scenes/scene-000000/camera/front/1630376943.500.jpg"
+                        image_path = qa_item.get('image', '')
+                        timestamp = None
+                        if image_path:
+                            # Extract timestamp from filename
+                            filename = osp.basename(image_path)  # e.g., "1630376943.500.jpg"
+                            if filename.endswith('.jpg') or filename.endswith('.png'):
+                                try:
+                                    timestamp_str = filename.rsplit('.', 2)[0]  # Remove .jpg, keep timestamp
+                                    timestamp = int(float(timestamp_str))  # Convert to int (1630376943)
+                                except (ValueError, IndexError):
+                                    pass
                         
                         if '_frame_' in item_id:
                             # Old format: scene-000000_frame_0000
@@ -224,10 +237,14 @@ class SUScapeOrionDataset(Custom3DDataset):
                                 except (ValueError, IndexError):
                                     continue
                         
-                        if scene_name and frame_idx is not None:
+                        if scene_name:
                             if scene_name not in self.qa_data[task]:
                                 self.qa_data[task][scene_name] = {}
-                            self.qa_data[task][scene_name][frame_idx] = qa_item
+                            # Index by both frame_idx and timestamp for flexible lookup
+                            if frame_idx is not None:
+                                self.qa_data[task][scene_name][frame_idx] = qa_item
+                            if timestamp is not None:
+                                self.qa_data[task][scene_name][timestamp] = qa_item
                     
                 print(f"Loaded {len(qa_list)} QA items for task {task}")
             else:
@@ -317,12 +334,14 @@ class SUScapeOrionDataset(Custom3DDataset):
         
         return None
     
-    def get_qa_conversations(self, scene_name, frame_idx, tasks=None):
+    def get_qa_conversations(self, scene_name, frame_key, tasks=None):
         """Get QA conversations for multiple tasks to use as LLM context.
         
         Args:
             scene_name (str): Scene identifier (e.g., 'scene-000000')
-            frame_idx (int): Frame index
+            frame_key (int): Frame identifier - can be either:
+                - timestamp (int, like 1630376943) - preferred
+                - frame_idx (int, like 0, 1, 2...) - fallback
             tasks (list, optional): List of QA tasks to retrieve (default: use self.qa_tasks)
                 Recommended: ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q8', 'q9']
                 Skip q7 (used as GT), q10-q12 (safety/comfort metrics)
@@ -351,10 +370,14 @@ class SUScapeOrionDataset(Custom3DDataset):
             if scene_name not in self.qa_data[task]:
                 continue
             
-            if frame_idx not in self.qa_data[task][scene_name]:
+            # Try to find QA data using frame_key
+            qa_item = None
+            if frame_key in self.qa_data[task][scene_name]:
+                qa_item = self.qa_data[task][scene_name][frame_key]
+            
+            if qa_item is None:
                 continue
             
-            qa_item = self.qa_data[task][scene_name][frame_idx]
             task_convs = qa_item.get('conversations', [])
             
             # Append conversations from this task
@@ -906,6 +929,7 @@ class SUScapeOrionDataset(Custom3DDataset):
         """
         scene_token = self.data_infos[index]['folder']
         frame_idx = self.data_infos[index]['frame_idx']
+        timestamp = self.data_infos[index].get('timestamp', None)
         
         # Initialize trajectories
         ego_his_trajs = np.zeros((past_frames, 2), dtype=np.float32)
@@ -917,8 +941,8 @@ class SUScapeOrionDataset(Custom3DDataset):
         
         # Try to get future trajectory from QA dataset (q7) if available
         qa_fut_traj = None
-        if 'q7' in self.qa_tasks and 'q7' in self.qa_data:
-            qa_fut_traj = self._get_qa_trajectory(scene_token, frame_idx, task='q7')
+        if 'q7' in self.qa_tasks and 'q7' in self.qa_data and timestamp is not None:
+            qa_fut_traj = self._get_qa_trajectory(scene_token, int(timestamp), task='q7')
         
         if qa_fut_traj is not None and len(qa_fut_traj) > 0:
             # Use QA trajectory - already in ego frame or world frame
@@ -1026,11 +1050,14 @@ class SUScapeOrionDataset(Custom3DDataset):
         # Add QA conversations if available (for LLM context)
         if self.qa_root and self.qa_tasks:
             scene_name = info.get('folder', '')  # Fixed: folder contains scene name
-            frame_idx = info.get('frame_idx', 0)
-            qa_conversations = self.get_qa_conversations(scene_name, frame_idx)
-            if len(qa_conversations) > 0:
-                anns_results['qa_conversations'] = qa_conversations
-                print(f"[DEBUG] Loaded {len(qa_conversations)} QA conversations for {scene_name} frame {frame_idx}")
+            timestamp = info.get('timestamp', None)  # Use timestamp for QA lookup
+            if timestamp is not None:
+                qa_conversations = self.get_qa_conversations(scene_name, int(timestamp))
+                if len(qa_conversations) > 0:
+                    anns_results['qa_conversations'] = qa_conversations
+                    print(f"[DEBUG] Loaded {len(qa_conversations)} QA conversations for {scene_name} timestamp {timestamp}")
+                else:
+                    print(f"[DEBUG] No QA found for {scene_name} timestamp {timestamp}")
         
         return anns_results
     
