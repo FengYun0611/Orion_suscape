@@ -842,7 +842,7 @@ class SUScapeOrionDataset(Custom3DDataset):
             ego_accel=info['ego_accel'],
             ego_rotation_rate=info['ego_rotation_rate'],
             npc2world=info['npc2world'],
-            timestamp=info['frame_idx'] / 10
+            timestamp=info.get('timestamp', info['frame_idx'] / 10)  # Use real timestamp from CSV
         )
         
         if self.modality['use_camera']:
