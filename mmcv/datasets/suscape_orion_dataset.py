@@ -374,6 +374,13 @@ class SUScapeOrionDataset(Custom3DDataset):
             qa_item = None
             if frame_key in self.qa_data[task][scene_name]:
                 qa_item = self.qa_data[task][scene_name][frame_key]
+            else:
+                # If exact match fails, find nearest timestamp (within 10 seconds tolerance)
+                available_timestamps = list(self.qa_data[task][scene_name].keys())
+                if available_timestamps:
+                    closest_ts = min(available_timestamps, key=lambda ts: abs(ts - frame_key))
+                    if abs(closest_ts - frame_key) <= 10:  # Within 10 seconds
+                        qa_item = self.qa_data[task][scene_name][closest_ts]
             
             if qa_item is None:
                 continue
