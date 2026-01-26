@@ -1202,9 +1202,13 @@ class LoadAnnoatationCriticalVQATest():
                 else:
                     i += 1
             
-            print(f"Using {len(sources)} pre-annotated QA pairs from ShareGPT dataset")
+            print(f"✓ Using {len(sources)} pre-annotated QA pairs from ShareGPT dataset (scene: {results.get('scene_token', 'unknown')})")
         else:
             # Fallback to generated VQA (original behavior)
+            if 'qa_conversations' not in results:
+                print(f"✗ No qa_conversations in results for scene {results.get('scene_token', 'unknown')}")
+            elif len(results.get('qa_conversations', [])) == 0:
+                print(f"✗ Empty qa_conversations for scene {results.get('scene_token', 'unknown')}")
             sources = self.preprocess_vqa(results)
         
         prompt = f"You are driving a car."

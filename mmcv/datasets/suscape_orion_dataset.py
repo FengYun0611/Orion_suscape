@@ -1025,10 +1025,12 @@ class SUScapeOrionDataset(Custom3DDataset):
         
         # Add QA conversations if available (for LLM context)
         if self.qa_root and self.qa_tasks:
-            scene_name = info.get('scene_name', '')
+            scene_name = info.get('folder', '')  # Fixed: folder contains scene name
             frame_idx = info.get('frame_idx', 0)
             qa_conversations = self.get_qa_conversations(scene_name, frame_idx)
-            anns_results['qa_conversations'] = qa_conversations
+            if len(qa_conversations) > 0:
+                anns_results['qa_conversations'] = qa_conversations
+                print(f"[DEBUG] Loaded {len(qa_conversations)} QA conversations for {scene_name} frame {frame_idx}")
         
         return anns_results
     
