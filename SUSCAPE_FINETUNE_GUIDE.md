@@ -9,9 +9,10 @@ The fine-tuning process enables ORION to learn how to effectively utilize QA con
 ## Prerequisites
 
 1. **Pretrained ORION checkpoint**: `ckpts/orion_stage3.pth`
-2. **SUScape data**: Located at `/lab/haoq_lab/cse12311753/suscape_scenes/`
+2. **SUScape scene data**: Located at `/lab/haoq_lab/cse12311753/suscape_scenes/`
 3. **ShareGPT QA data**: Located at `/lab/haoq_lab/cse12311753/sharegpt_dataset/`
-4. **GPU resources**: 4x A100 GPUs recommended (can adjust batch size for fewer GPUs)
+4. **SUScape pkl file**: `data/suscape_infos/suscape_infos_test.pkl` (in the repository)
+5. **GPU resources**: 4x A100 GPUs recommended (can adjust batch size for fewer GPUs)
 
 ## Quick Start
 
@@ -26,7 +27,7 @@ chmod +x run_suscape_finetune.sh
 ```
 
 This script will:
-1. Automatically split `test.pkl` into `train.pkl` (80%) and `val.pkl` (20%)
+1. Automatically split `suscape_infos_test.pkl` into `suscape_infos_train.pkl` (80%) and `suscape_infos_val.pkl` (20%)
 2. Start distributed training on 4 GPUs
 3. Save checkpoints every epoch
 4. Show evaluation command when done
@@ -37,15 +38,15 @@ This script will:
 
 ```bash
 python tools/split_suscape_data.py \
-    --input /lab/haoq_lab/cse12311753/suscape_scenes/test.pkl \
-    --output-dir /lab/haoq_lab/cse12311753/suscape_scenes \
+    --input data/suscape_infos/suscape_infos_test.pkl \
+    --output-dir data/suscape_infos \
     --train-ratio 0.8 \
     --seed 42
 ```
 
 This creates:
-- `train.pkl`: 80% of data (for training)
-- `val.pkl`: 20% of data (for validation)
+- `suscape_infos_train.pkl`: 80% of data (for training)
+- `suscape_infos_val.pkl`: 20% of data (for validation)
 
 #### Step 2: Run Training
 

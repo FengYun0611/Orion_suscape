@@ -262,12 +262,16 @@ data_root = "/lab/haoq_lab/cse12311753/suscape_scenes/"
 csv_root = "/lab/haoq_lab/cse12311753/suscape_scenes/"
 qa_root = "/lab/haoq_lab/cse12311753/sharegpt_dataset/"
 qa_tasks = ["q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8", "q9"]
-info_root = "/lab/haoq_lab/cse12311753/suscape_scenes"
+
+# Use the existing pkl file from the data directory
+# If you have suscape_infos_test.pkl, use that. Otherwise use test.pkl
+info_root = "data/suscape_infos"
 
 file_client_args = dict(backend="disk")
-# Use existing test.pkl for both train and val (can be split later)
-ann_file_train = info_root + "/test.pkl"
-ann_file_val = info_root + "/test.pkl"
+# Use existing suscape_infos_test.pkl for both train and val
+# This will be split into train/val by split_suscape_data.py
+ann_file_train = info_root + "/suscape_infos_train.pkl"  # Will be created by split script
+ann_file_val = info_root + "/suscape_infos_val.pkl"      # Will be created by split script
 
 # Training pipeline with QA integration
 train_pipeline = [

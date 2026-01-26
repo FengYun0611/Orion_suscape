@@ -15,15 +15,15 @@ echo "============================================"
 echo "Step 1: Preparing train/val split"
 echo "============================================"
 
-if [ ! -f "/lab/haoq_lab/cse12311753/suscape_scenes/train.pkl" ]; then
-    echo "Splitting test.pkl into train.pkl and val.pkl..."
+if [ ! -f "data/suscape_infos/suscape_infos_train.pkl" ]; then
+    echo "Splitting suscape_infos_test.pkl into train and val..."
     python tools/split_suscape_data.py \
-        --input /lab/haoq_lab/cse12311753/suscape_scenes/test.pkl \
-        --output-dir /lab/haoq_lab/cse12311753/suscape_scenes \
+        --input data/suscape_infos/suscape_infos_test.pkl \
+        --output-dir data/suscape_infos \
         --train-ratio 0.8 \
         --seed 42
 else
-    echo "train.pkl already exists, skipping split"
+    echo "suscape_infos_train.pkl already exists, skipping split"
 fi
 
 echo ""

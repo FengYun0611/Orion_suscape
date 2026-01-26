@@ -3,14 +3,21 @@
 Split SUScape dataset pickle file into train/val splits for fine-tuning.
 
 Usage:
+    # If you have suscape_infos_test.pkl in data/suscape_infos:
+    python tools/split_suscape_data.py \
+        --input data/suscape_infos/suscape_infos_test.pkl \
+        --output-dir data/suscape_infos \
+        --train-ratio 0.8
+    
+    # Or if you have a test.pkl file:
     python tools/split_suscape_data.py \
         --input /lab/haoq_lab/cse12311753/suscape_scenes/test.pkl \
-        --output-dir /lab/haoq_lab/cse12311753/suscape_scenes \
+        --output-dir data/suscape_infos \
         --train-ratio 0.8
 
 This will create:
-    - train.pkl (80% of data)
-    - val.pkl (20% of data)
+    - suscape_infos_train.pkl (80% of data)
+    - suscape_infos_val.pkl (20% of data)
 """
 
 import argparse
@@ -54,12 +61,12 @@ def split_pickle(input_file, output_dir, train_ratio=0.8, seed=42):
     train_data = {'infos': train_infos, 'metadata': metadata}
     val_data = {'infos': val_infos, 'metadata': metadata}
     
-    # Save train.pkl
+    # Save suscape_infos_train.pkl and suscape_infos_val.pkl
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    train_file = output_dir / 'train.pkl'
-    val_file = output_dir / 'val.pkl'
+    train_file = output_dir / 'suscape_infos_train.pkl'
+    val_file = output_dir / 'suscape_infos_val.pkl'
     
     print(f"\nSaving train set ({len(train_infos)} samples) to {train_file}...")
     with open(train_file, 'wb') as f:
