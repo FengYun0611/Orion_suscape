@@ -140,22 +140,93 @@ print("Number of QA pairs:", len(results.get('qa_conversations', [])))
 
 ## Troubleshooting
 
-### Issue: "QA file not found"
+### Validation Script
+
+Run the validation script to check if QA integration is working:
+
+```bash
+# Basic validation (checks files and config)
+python validate_qa_integration.py
+
+# Full validation (tests dataset loading - requires full environment)
+python validate_qa_integration.py --full
+```
+
+### Common Issues
+
+#### Issue 1: QA Integrated But L2 Error Not Improving ⚠️
+
+**Symptoms:**
+- Evaluation runs successfully  
+- No error messages  
+- L2 error similar to baseline (~4.92m)
+
+**Diagnosis:**
+```bash
+# Check if QA is actually being used (look for this message in logs)
+python adzoo/orion/test.py adzoo/orion/configs/suscape_eval.py CHECKPOINT --eval bbox 2>&1 | grep "Using.*pre-annotated QA"
+
+# Expected output: "Using X pre-annotated QA pairs from ShareGPT dataset" for each sample
+```
+
+**Possible Causes:**
+
+1. **QA loaded but LLM not processing it**
+   - Verify `use_critical_qa=True` in config (line 91)
+   - Check LLM checkpoint exists: `ls ckpts/pretrain_qformer/`
+   - LLM may need warmup iterations
+
+2. **Model not trained to use QA context** (Most Likely)
+   - Current: QA provided as context but model wasn't fine-tuned on SUScape
+   - Solution: Fine-tune model on SUScape QA dataset
+   - Providing context ≠ model knows how to use it effectively
+
+3. **Domain gap too large**
+   - Model trained on nuScenes, tested on SUScape
+   - QA helps but can't fully bridge domain difference
+   - Expected improvement: 4.92m → 3-4m (not 0.68m)
+
+4. **QA data not matching samples**
+   - Check scene naming: ShareGPT uses `scene-000000_7_q1` format
+   - Verify frame_idx matches between CSV and QA dataset
+
+**Add Debug Output:**
+```python
+# In mmcv/datasets/pipelines/transforms_3d.py, line 1205, add:
+print(f"✅ Using {len(sources)} pre-annotated QA pairs from ShareGPT dataset")
+print(f"  First QA: {sources[0][0]['value'][:100]}...")  # Show first question
+```
+
+#### Issue 2: "QA file not found"
 **Cause**: Path mismatch  
 **Solution**: Verify `/lab/haoq_lab/cse12311753/sharegpt_dataset/suscape_NQA_q1.json` exists
 
-### Issue: "No QA conversations found"
+```bash
+# Check all QA files
+ls /lab/haoq_lab/cse12311753/sharegpt_dataset/suscape_NQA_q*.json
+
+# Verify file format
+head -20 /lab/haoq_lab/cse12311753/sharegpt_dataset/suscape_NQA_q1.json
+```
+
+#### Issue 3: "No QA conversations found"
 **Cause**: Scene/frame mismatch between CSV and ShareGPT  
 **Solution**: Check ID format in ShareGPT (scene-000000_7_q1) matches your scenes
 
-### Issue: "CUDA out of memory"
+```python
+# Add debug in get_qa_conversations():
+print(f"Looking for QA: scene={scene_name}, frame={frame_idx}")
+print(f"Found {len(result)} conversation turns")
+```
+
+#### Issue 4: "CUDA out of memory"
 **Cause**: LLM + vision features too large  
 **Solution**: 
 - Use smaller batch size (already set to 1)
 - Use A100 80GB instead of A100 40GB
 - Reduce `max_length` in tokenizer config
 
-### Issue: "Evaluation too slow"
+#### Issue 5: "Evaluation too slow"
 **Expected**: 1-2 days is normal for 24K samples with LLM  
 **Optimization**: 
 - Run on multiple A100s if available
