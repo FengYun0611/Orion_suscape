@@ -1052,7 +1052,15 @@ class SUScapeOrionDataset(Custom3DDataset):
         agent_fut_masks = np.zeros((num_agents, self.future_frames), dtype=np.float32)
         agent_fut_yaw = np.zeros((num_agents, self.future_frames), dtype=np.float32)
         
-        if num_agents == 0 or not hasattr(self, 'scene_csv_data') or scene_name not in self.scene_csv_data:
+        if num_agents == 0:
+            return agent_fut_trajs, agent_fut_masks, agent_fut_yaw
+            
+        if not hasattr(self, 'scene_csv_data'):
+            print(f"[DEBUG] scene_csv_data attribute not found!")
+            return agent_fut_trajs, agent_fut_masks, agent_fut_yaw
+            
+        if scene_name not in self.scene_csv_data:
+            print(f"[DEBUG] Scene {scene_name} not in scene_csv_data. Available: {list(self.scene_csv_data.keys())[:3]}")
             return agent_fut_trajs, agent_fut_masks, agent_fut_yaw
         
         df = self.scene_csv_data[scene_name]
@@ -1060,18 +1068,28 @@ class SUScapeOrionDataset(Custom3DDataset):
         # Get all timestamps sorted
         all_timestamps = sorted(df['TIMESTAMP'].unique())
         
-        # Find current timestamp index
-        try:
-            current_idx = all_timestamps.index(current_timestamp)
-        except ValueError:
-            # Timestamp not found, return zeros
+        # Find current timestamp index - use approximate matching for floats
+        current_idx = None
+        for idx, ts in enumerate(all_timestamps):
+            if abs(ts - current_timestamp) < 0.01:  # Tolerance of 0.01 seconds
+                current_idx = idx
+                break
+        
+        if current_idx is None:
+            print(f"[DEBUG] Current timestamp {current_timestamp} not found in CSV timestamps.")
+            print(f"[DEBUG] CSV has {len(all_timestamps)} timestamps, first 10: {all_timestamps[:10]}")
+            print(f"[DEBUG] Looking for: {current_timestamp}")
             return agent_fut_trajs, agent_fut_masks, agent_fut_yaw
         
         # For each agent, extract future trajectory
+        debug_first_agent = True  # Only debug first agent to avoid spam
+        masks_set_count = 0
+        
         for agent_idx, track_id in enumerate(gt_ids):
             # Get future timestamps (next future_frames timestamps)
             future_timestamps = all_timestamps[current_idx + 1 : current_idx + 1 + self.future_frames]
             
+            agent_masks_set = 0
             for fut_idx, fut_timestamp in enumerate(future_timestamps):
                 # Query CSV for this track_id at future timestamp
                 agent_fut_data = df[(df['TIMESTAMP'] == fut_timestamp) & (df['TRACK_ID'] == track_id)]
@@ -1095,6 +1113,26 @@ class SUScapeOrionDataset(Custom3DDataset):
                     agent_fut_trajs[agent_idx, fut_idx * 2 + 1] = y_ego
                     agent_fut_masks[agent_idx, fut_idx] = 1.0
                     agent_fut_yaw[agent_idx, fut_idx] = yaw_ego
+                    agent_masks_set += 1
+                    masks_set_count += 1
+                elif debug_first_agent and agent_idx == 0:
+                    print(f"[DEBUG] Agent 0 track_id={track_id} fut_idx={fut_idx} fut_timestamp={fut_timestamp}: NOT FOUND")
+                    if fut_idx == 0:
+                        # Check what track_ids exist at this future timestamp
+                        tracks_at_fut = df[df['TIMESTAMP'] == fut_timestamp]['TRACK_ID'].unique()
+                        print(f"[DEBUG]   Tracks at fut_timestamp={fut_timestamp}: {tracks_at_fut[:10]}")
+            
+            if debug_first_agent and agent_idx == 0:
+                print(f"[DEBUG] Agent 0 set {agent_masks_set}/{len(future_timestamps)} masks")
+                debug_first_agent = False  # Don't spam for other agents
+        
+        if masks_set_count == 0:
+            print(f"[DEBUG] WARNING: No future trajectories found for ANY agent!")
+            print(f"[DEBUG]   Num agents: {num_agents}")
+            print(f"[DEBUG]   Future timestamps: {future_timestamps}")
+            print(f"[DEBUG]   First 3 gt_ids: {gt_ids[:3]}")
+            print(f"[DEBUG]   Track IDs in CSV: {df['TRACK_ID'].unique()[:10]}")
+
         
         return agent_fut_trajs, agent_fut_masks, agent_fut_yaw
     
