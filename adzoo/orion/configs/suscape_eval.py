@@ -214,8 +214,8 @@ dataset_type = "SUScapeOrionDataset"
 
 # Data paths - Update these to match your directory structure
 # For new structure (separate CSV directory):
-data_root = "data/suscape_scenes"  # Directory containing scene-XXXXXX folders
-csv_root = "data/suscape_scene_traj_csv_alldistance_fixyaw"  # Directory containing X.csv files
+data_root = "/lab/haoq_lab/cse12311753/suscape_scenes"  # Directory containing scene-XXXXXX folders
+csv_root = "/lab/haoq_lab/cse12311753/suscape_scene_traj_csv_alldistance_fixyaw"  # Directory containing X.csv files
 qa_root = "/lab/haoq_lab/cse12311753/sharegpt_dataset"  # QA dataset directory with ShareGPT format
 qa_tasks = ["q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8", "q9"]  # QA tasks to use
 # q1-q6, q8-q9: Scene understanding for LLM context

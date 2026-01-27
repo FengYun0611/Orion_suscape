@@ -259,7 +259,7 @@ dataset_type = "SUScapeOrionDataset"
 
 # Data paths
 data_root = "/lab/haoq_lab/cse12311753/suscape_scenes/"
-csv_root = "/lab/haoq_lab/cse12311753/suscape_scenes/"
+csv_root = "/lab/haoq_lab/cse12311753/suscape_scene_traj_csv_alldistance_fixyaw/"
 qa_root = "/lab/haoq_lab/cse12311753/sharegpt_dataset/"
 qa_tasks = ["q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8", "q9"]
 
