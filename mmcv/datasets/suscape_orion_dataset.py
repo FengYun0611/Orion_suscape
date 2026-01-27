@@ -405,7 +405,13 @@ class SUScapeOrionDataset(Custom3DDataset):
         """
         if osp.exists(ann_file):
             print(f'Loading annotations from {ann_file}')
-            return super().load_annotations(ann_file)
+            data_infos = super().load_annotations(ann_file)
+            
+            # Parse CSV files to populate scene_csv_data for future trajectory extraction
+            # This is needed because pkl only contains metadata, not the raw CSV data
+            self._load_csv_data_from_infos(data_infos)
+            
+            return data_infos
         
         print(f'Annotation file {ann_file} not found. Generating from SUScape data...')
         data_infos = self._generate_annotations_from_suscape()
@@ -416,6 +422,55 @@ class SUScapeOrionDataset(Custom3DDataset):
         print(f'Saved {len(data_infos)} annotations to {ann_file}')
         
         return data_infos
+    
+    def _load_csv_data_from_infos(self, data_infos):
+        """Load CSV data for all scenes in data_infos to populate scene_csv_data.
+        
+        This is called when loading from pkl file to ensure scene_csv_data is available
+        for future trajectory extraction.
+        
+        Args:
+            data_infos (list): List of data info dicts with 'folder' field (scene name)
+        """
+        if not hasattr(self, 'scene_csv_data'):
+            self.scene_csv_data = {}
+        
+        # Extract unique scene names from data_infos
+        scene_names = set()
+        for info in data_infos:
+            scene_name = info.get('folder', None)
+            if scene_name:
+                scene_names.add(scene_name)
+        
+        print(f'Loading CSV data for {len(scene_names)} scenes...')
+        
+        # Load CSV for each scene
+        for scene_name in sorted(scene_names):
+            # Determine CSV file path based on structure
+            csv_file = None
+            
+            if self.csv_root is not None:
+                # New structure: csv_root/X.csv where X is scene number
+                # Extract scene number from scene-XXXXXX
+                scene_num = scene_name.split('-')[-1]  # e.g., "000000" from "scene-000000"
+                csv_file = osp.join(self.csv_root, f'{int(scene_num)}.csv')
+            else:
+                # Old structure: data_root/raws/scene-XXXXXX/0.csv
+                raws_dir = osp.join(self.data_root, 'raws')
+                if osp.exists(raws_dir):
+                    csv_file = osp.join(raws_dir, scene_name, '0.csv')
+                else:
+                    # Scenes directly in data_root
+                    csv_file = osp.join(self.data_root, scene_name, '0.csv')
+            
+            if csv_file and osp.exists(csv_file):
+                # Parse CSV and store in scene_csv_data
+                df = pd.read_csv(csv_file)
+                self.scene_csv_data[scene_name] = df
+            else:
+                print(f'Warning: CSV file not found for scene {scene_name}: {csv_file}')
+        
+        print(f'Loaded CSV data for {len(self.scene_csv_data)} scenes')
     
     def _generate_annotations_from_suscape(self):
         """Generate annotations by scanning SUScape scene directories and CSV files.
