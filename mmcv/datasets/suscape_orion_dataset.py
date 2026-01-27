@@ -442,9 +442,14 @@ class SUScapeOrionDataset(Custom3DDataset):
             if scene_name:
                 scene_names.add(scene_name)
         
-        print(f'Loading CSV data for {len(scene_names)} scenes...')
+        print(f'[DEBUG] Loading CSV data for {len(scene_names)} scenes...')
+        print(f'[DEBUG] csv_root: {self.csv_root}')
+        print(f'[DEBUG] First 3 scene names: {sorted(list(scene_names))[:3]}')
         
         # Load CSV for each scene
+        found_count = 0
+        not_found_count = 0
+        
         for scene_name in sorted(scene_names):
             # Determine CSV file path based on structure
             csv_file = None
@@ -467,10 +472,18 @@ class SUScapeOrionDataset(Custom3DDataset):
                 # Parse CSV and store in scene_csv_data
                 df = pd.read_csv(csv_file)
                 self.scene_csv_data[scene_name] = df
+                found_count += 1
+                if found_count <= 3:
+                    print(f'[DEBUG] Loaded CSV for {scene_name}: {csv_file} ({len(df)} rows)')
             else:
-                print(f'Warning: CSV file not found for scene {scene_name}: {csv_file}')
+                not_found_count += 1
+                if not_found_count <= 3:
+                    print(f'[DEBUG] CSV not found for {scene_name}: {csv_file}')
         
-        print(f'Loaded CSV data for {len(self.scene_csv_data)} scenes')
+        print(f'[DEBUG] CSV loading complete: {found_count} found, {not_found_count} not found')
+        print(f'[DEBUG] scene_csv_data now has {len(self.scene_csv_data)} scenes')
+        if len(self.scene_csv_data) > 0:
+            print(f'[DEBUG] First 3 scenes in scene_csv_data: {list(self.scene_csv_data.keys())[:3]}')
     
     def _generate_annotations_from_suscape(self):
         """Generate annotations by scanning SUScape scene directories and CSV files.
