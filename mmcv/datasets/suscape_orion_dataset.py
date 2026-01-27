@@ -1152,6 +1152,10 @@ class SUScapeOrionDataset(Custom3DDataset):
             gt_names=gt_names,
             attr_labels=attr_labels,
             gt_ids=gt_ids,
+            # Add future trajectories as separate keys for validation/debugging
+            agent_fut_traj=agent_fut_trajs,
+            agent_fut_mask=agent_fut_masks,
+            agent_fut_yaw=agent_fut_yaw,
         )
         
         # Add QA conversations if available (for LLM context)
