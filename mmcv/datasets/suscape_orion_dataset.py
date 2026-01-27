@@ -116,6 +116,11 @@ class SUScapeOrionDataset(Custom3DDataset):
         **kwargs: Additional arguments for Custom3DDataset
     """
     
+    # Define classes compatible with nuScenes-style checkpoints (9 classes)
+    # These match the checkpoint training and evaluation configuration
+    CLASSES = ('car', 'van', 'truck', 'bicycle', 'traffic_sign', 'traffic_cone', 
+               'traffic_light', 'pedestrian', 'others')
+    
     def __init__(
         self, 
         queue_length=4,
