@@ -91,11 +91,15 @@ def collate_dc(batch, samples_per_gpu=1, _recursion_depth=0):
         return DataContainer(stacked, batch[0].stack, batch[0].padding_value)
     elif isinstance(batch[0], Sequence):
         # Check if this is a list of tensors (e.g., input_ids, vlm_labels)
-        # If so, return as-is to avoid recursion and allow pad_sequence to handle it
+        # If so, flatten and return to allow pad_sequence to handle it
         if len(batch[0]) > 0 and isinstance(batch[0][0], torch.Tensor):
-            # This is a list of tensors, return the batch as-is
-            # Each element in batch is a list of tensors
-            return batch
+            # This is a list of tensor lists, flatten them into a single list
+            # Each element in batch is a list of tensors, we want all tensors in one list
+            # e.g., [[tensor1, tensor2], [tensor3, tensor4]] -> [tensor1, tensor2, tensor3, tensor4]
+            result = []
+            for item in batch:
+                result.extend(item)
+            return result
         transposed = zip(*batch)
         return [collate_dc(samples, samples_per_gpu, _recursion_depth + 1) for samples in transposed]
     elif isinstance(batch[0], Mapping):
