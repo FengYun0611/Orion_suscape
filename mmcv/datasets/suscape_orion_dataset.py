@@ -407,11 +407,19 @@ class SUScapeOrionDataset(Custom3DDataset):
             print(f'Loading annotations from {ann_file}')
             data_infos = super().load_annotations(ann_file)
             
+            # Handle both dict and list formats
+            # Some pkl files store data as {'infos': [...], 'metadata': {...}}
+            if isinstance(data_infos, dict) and 'infos' in data_infos:
+                infos_list = data_infos['infos']
+            else:
+                infos_list = data_infos
+            
             # Parse CSV files to populate scene_csv_data for future trajectory extraction
             # This is needed because pkl only contains metadata, not the raw CSV data
-            self._load_csv_data_from_infos(data_infos)
+            self._load_csv_data_from_infos(infos_list)
             
-            return data_infos
+            # Always return a list for consistency with parent class expectations
+            return infos_list
         
         print(f'Annotation file {ann_file} not found. Generating from SUScape data...')
         data_infos = self._generate_annotations_from_suscape()
