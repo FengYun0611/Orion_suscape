@@ -164,11 +164,15 @@ class Orion(MVXTwoStageDetector):
             if tokenizer.startswith('./') or tokenizer.startswith('../') or tokenizer.startswith('/'):
                 tokenizer = os.path.abspath(tokenizer)
             
+            # Strip trailing slash which can cause issues with HuggingFace
+            tokenizer = tokenizer.rstrip('/')
+            
             self.tokenizer =  AutoTokenizer.from_pretrained(tokenizer,
                                         model_max_length=2048,
                                         padding_side="right",
                                         use_fast=False,
                                         local_files_only=True,
+                                        trust_remote_code=True,
                                         )
             self.tokenizer.pad_token = self.tokenizer.unk_token
         else:
