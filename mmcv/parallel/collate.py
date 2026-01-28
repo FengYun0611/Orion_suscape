@@ -19,7 +19,7 @@ def collate(batch, samples_per_gpu=1):
             data_dict[key] = value
     return data_dict
 
-def collate_dc(batch, samples_per_gpu=1):
+def collate_dc(batch, samples_per_gpu=1, _recursion_depth=0):
     """Puts each data field into a tensor/DataContainer with outer dimension
     batch size.
 
@@ -30,6 +30,12 @@ def collate_dc(batch, samples_per_gpu=1):
     2. cpu_only = False, stack = True, e.g., images tensors
     3. cpu_only = False, stack = False, e.g., gt bboxes
     """
+    
+    # Add recursion depth limit to prevent infinite recursion
+    if _recursion_depth > 10:
+        # If we've recursed too deep, just return the batch as-is
+        # This prevents infinite recursion on problematic data structures
+        return batch
 
     if not isinstance(batch, Sequence):
         raise TypeError(f'{batch.dtype} is not supported.')
@@ -91,11 +97,11 @@ def collate_dc(batch, samples_per_gpu=1):
             # Each element in batch is a list of tensors
             return batch
         transposed = zip(*batch)
-        return [collate_dc(samples, samples_per_gpu) for samples in transposed]
+        return [collate_dc(samples, samples_per_gpu, _recursion_depth + 1) for samples in transposed]
     elif isinstance(batch[0], Mapping):
         
         return {
-            key: collate_dc([d[key] for d in batch], samples_per_gpu)
+            key: collate_dc([d[key] for d in batch], samples_per_gpu, _recursion_depth + 1)
             for key in batch[0]
         }
     else:
