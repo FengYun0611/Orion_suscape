@@ -163,6 +163,7 @@ class Orion(MVXTwoStageDetector):
                                         model_max_length=2048,
                                         padding_side="right",
                                         use_fast=False,
+                                        local_files_only=True,
                                         )
             self.tokenizer.pad_token = self.tokenizer.unk_token
         else:
