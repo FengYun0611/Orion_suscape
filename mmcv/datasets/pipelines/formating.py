@@ -492,10 +492,14 @@ class PETRFormatBundle3D(DefaultFormatBundle):
                 continue
             results[key] = DC(to_tensor(results[key]), stack=False)
             
+        # Skip wrapping input_ids and vlm_labels in DC
+        # They are lists of tensors that will be processed by pad_sequence in orion.py
+        # Wrapping in DC causes collation issues (list of lists instead of list of tensors)
         for key in ['input_ids', 'vlm_labels']:
             if key not in results:
                 continue
-            results[key] = DC(results[key], stack=False)
+            # Keep as-is (list of tensors), don't wrap in DC
+            pass  # results[key] remains unchanged
         
         if self.with_ego:
             if 'ego_his_trajs' in results:
