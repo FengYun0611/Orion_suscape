@@ -159,8 +159,9 @@ class Orion(MVXTwoStageDetector):
             self.map_head.ego_pose_pe = self.ego_pose_pe
 
         if tokenizer is not None:
-            # Convert relative path to absolute path to avoid HuggingFace validation error
-            if os.path.exists(tokenizer):
+            # Convert relative/local paths to absolute paths to avoid HuggingFace validation error
+            # This must be done even if path doesn't exist yet, to bypass repo ID validation
+            if tokenizer.startswith('./') or tokenizer.startswith('../') or tokenizer.startswith('/'):
                 tokenizer = os.path.abspath(tokenizer)
             
             self.tokenizer =  AutoTokenizer.from_pretrained(tokenizer,
