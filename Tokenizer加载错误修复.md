@@ -34,40 +34,42 @@ Traceback (most recent call last):
 
 ## 根本原因
 
-### 问题分析
+### 问题分析（深度）
 
 1. **代码位置**: `mmcv/models/detectors/orion.py` 第162行
-2. **问题代码**:
-   ```python
-   self.tokenizer = AutoTokenizer.from_pretrained(tokenizer,
-                               model_max_length=2048,
-                               padding_side="right",
-                               use_fast=False,
-                               )
-   ```
+
+2. **关键发现**: HuggingFace 在检查 `local_files_only` 参数**之前**就会验证路径格式
+   - `huggingface_hub/utils/_validators.py` 第154行会拒绝包含 `.` 或 `/` 的路径
+   - 这发生在实际文件加载之前
 
 3. **触发条件**: 
-   - 配置文件中的 `tokenizer` 参数指向本地路径，如 `'./ckpts/pretrain_qformer/'`
+   - 配置文件中的 `tokenizer` 参数指向本地相对路径，如 `'./ckpts/pretrain_qformer/'`
+   - 相对路径被当作无效的仓库ID而被拒绝
    - HuggingFace 的 `from_pretrained()` 默认会尝试从 HuggingFace Hub 下载模型
    - 本地路径格式不符合 Hub 的仓库ID格式 `'repo_name'` 或 `'namespace/repo_name'`
 
 4. **为什么会失败**:
-   - `from_pretrained()` 首先验证参数是否是有效的仓库ID
-   - 本地路径 `'./ckpts/pretrain_qformer/'` 包含 `./` 和结尾的 `/`，不符合仓库ID规范
-   - 验证失败导致抛出 `HFValidationError`
+   - HuggingFace 在检查参数之前先验证路径格式
+   - `huggingface_hub/utils/_validators.py` 拒绝包含 `.` 或 `/` 的字符串
+   - 即使添加 `local_files_only=True`，验证仍会在之前执行
+   - 相对路径被当作无效仓库ID而被拒绝
 
 ---
 
-## 解决方案
+## 解决方案（两步修复）
 
-### 修复方法
+### 第一步修复（不完全有效）
 
-在 `AutoTokenizer.from_pretrained()` 调用中添加 `local_files_only=True` 参数。
+最初尝试添加 `local_files_only=True` 参数，但这**不足以解决问题**，因为验证发生在参数检查之前。
 
-### 代码修改
+### 第二步修复（完整解决）
+
+**将相对路径转换为绝对路径**，然后再传递给 `from_pretrained()`。
+
+### 最终代码修改
 
 **文件**: `mmcv/models/detectors/orion.py`  
-**位置**: 第166行
+**位置**: 第162-171行
 
 #### 修改前
 
@@ -82,21 +84,31 @@ self.tokenizer = AutoTokenizer.from_pretrained(tokenizer,
 #### 修改后
 
 ```python
+# Convert relative path to absolute path to avoid HuggingFace validation error
+if os.path.exists(tokenizer):
+    tokenizer = os.path.abspath(tokenizer)
+
 self.tokenizer = AutoTokenizer.from_pretrained(tokenizer,
                             model_max_length=2048,
                             padding_side="right",
                             use_fast=False,
-                            local_files_only=True,  # ← 新增此行
+                            local_files_only=True,
                             )
 ```
 
+### 修复原理
+
+1. **路径检查**: `os.path.exists(tokenizer)` 检查是否为本地路径
+2. **转换**: `os.path.abspath(tokenizer)` 将相对路径转为绝对路径
+   - `'./ckpts/pretrain_qformer/'` → `'/lab/haoq_lab/cse12311753/VLA/Orion_suscape/ckpts/pretrain_qformer/'`
+3. **绕过验证**: HuggingFace 接受绝对路径，不进行仓库ID验证
+4. **加载**: 使用 `local_files_only=True` 确保只从本地加载
+
 ### 参数说明
 
-**`local_files_only=True`** 的作用：
-- 告诉 HuggingFace 只使用本地文件
-- 不尝试从 HuggingFace Hub 下载
-- 不验证仓库ID格式
-- 适用于本地路径和已缓存的远程模型
+**为什么需要两个修改**:
+1. **`os.path.abspath()`**: 绕过 HuggingFace 的仓库ID验证
+2. **`local_files_only=True`**: 防止尝试网络下载，加快加载速度
 
 ---
 
