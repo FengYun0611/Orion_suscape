@@ -374,6 +374,7 @@ data = dict(
         eval_cfg=eval_cfg,
         test_mode=True,
     ),
+    shuffler_sampler=dict(type='DistributedGroupSampler'),
     nonshuffler_sampler=dict(type="DistributedSampler"),
 )
 
