@@ -159,6 +159,10 @@ class Orion(MVXTwoStageDetector):
             self.map_head.ego_pose_pe = self.ego_pose_pe
 
         if tokenizer is not None:
+            # Convert relative path to absolute path to avoid HuggingFace validation error
+            if os.path.exists(tokenizer):
+                tokenizer = os.path.abspath(tokenizer)
+            
             self.tokenizer =  AutoTokenizer.from_pretrained(tokenizer,
                                         model_max_length=2048,
                                         padding_side="right",
