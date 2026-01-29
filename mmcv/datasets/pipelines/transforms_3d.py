@@ -1222,7 +1222,6 @@ class LoadAnnoatationCriticalVQATest():
                 {"from": 'gpt',
                 "value": "Here is the planning trajectory <waypoint_ego>"}]
             ]
-        vlm_labels = [anno[0]['value'] for anno in sources]
 
         if self.use_gen_token:
             vqa_anno = [item for pair in sources for item in pair]
@@ -1232,8 +1231,11 @@ class LoadAnnoatationCriticalVQATest():
             vqa_anno = [item for pair in sources for item in pair]
             vqa_anno[0]['value'] = DEFAULT_IMAGE_TOKEN + '\n' + prompt + vqa_anno[0]['value']
         
-        vqa_converted = preprocess(sources, self.tokenizer, has_image=True, training_mode=False, only_one_system_prompt = True)
-        input_ids = vqa_converted['input_ids']
+        # Use training_mode=True to get proper labels as tensors
+        vqa_converted = preprocess(sources, self.tokenizer, has_image=True, training_mode=True, only_one_system_prompt = True)
+        # Extract individual tensors from the batch (sources can have multiple conversations)
+        input_ids = [vqa_converted['input_ids'][i] for i in range(len(sources))]
+        vlm_labels = [vqa_converted['labels'][i] for i in range(len(sources))]
 
         results['input_ids'] = input_ids
         results['vlm_labels'] = vlm_labels
