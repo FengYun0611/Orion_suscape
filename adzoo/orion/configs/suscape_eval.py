@@ -170,7 +170,8 @@ model = dict(
             flash_attn=True,
             return_intermediate=False,
         ),
-        code_weights=[2.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        code_size=8,  # SUScape uses 7D bbox (no velocity) -> 8D after normalization
+        code_weights=[2.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # 8 weights to match code_size
         score_threshold=0.2,
         class_agnostic_nms=dict(
             classes=[0, 1, 2, 3, 4, 5, 6, 7, 8],  # All 9 classes
