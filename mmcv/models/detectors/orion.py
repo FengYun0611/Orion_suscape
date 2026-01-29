@@ -503,7 +503,11 @@ class Orion(MVXTwoStageDetector):
             vlm_labels = None
             vlm_attn_mask = None
         # img_metas = [img_metas[0][0]] # BUG:这样不是seq
-        img_metas = [img_meta[0] for img_meta in img_metas]
+        # Handle img_metas structure - it may already be unwrapped or still nested
+        # After collation, check if elements are dicts (already unwrapped) or lists (need unwrapping)
+        if img_metas and isinstance(img_metas[0], list):
+            img_metas = [img_meta[0] for img_meta in img_metas]
+        # If img_metas elements are already dicts, use as-is
 
         data['img_feats'] = self.extract_feat(data['img'])
         losses = self.forward_pts_train(gt_bboxes_3d, gt_labels_3d, gt_attr_labels,map_gt_bboxes_3d, map_gt_labels_3d, img_metas,input_ids, vlm_labels, vlm_attn_mask, ego_fut_trajs,**data)
