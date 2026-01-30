@@ -19,7 +19,7 @@ def collate(batch, samples_per_gpu=1):
             data_dict[key] = value
     return data_dict
 
-def collate_dc(batch, samples_per_gpu=1):
+def collate_dc(batch, samples_per_gpu=1, _recursion_depth=0):
     """Puts each data field into a tensor/DataContainer with outer dimension
     batch size.
 
@@ -30,6 +30,12 @@ def collate_dc(batch, samples_per_gpu=1):
     2. cpu_only = False, stack = True, e.g., images tensors
     3. cpu_only = False, stack = False, e.g., gt bboxes
     """
+    
+    # Add recursion depth limit to prevent infinite recursion
+    if _recursion_depth > 10:
+        # If we've recursed too deep, just return the batch as-is
+        # This prevents infinite recursion on problematic data structures
+        return batch
 
     if not isinstance(batch, Sequence):
         raise TypeError(f'{batch.dtype} is not supported.')
@@ -84,12 +90,22 @@ def collate_dc(batch, samples_per_gpu=1):
                     [sample.data for sample in batch[i:i + samples_per_gpu]])
         return DataContainer(stacked, batch[0].stack, batch[0].padding_value)
     elif isinstance(batch[0], Sequence):
+        # Check if this is a list of tensors (e.g., input_ids, vlm_labels)
+        # If so, flatten and return to allow pad_sequence to handle it
+        if len(batch[0]) > 0 and isinstance(batch[0][0], torch.Tensor):
+            # This is a list of tensor lists, flatten them into a single list
+            # Each element in batch is a list of tensors, we want all tensors in one list
+            # e.g., [[tensor1, tensor2], [tensor3, tensor4]] -> [tensor1, tensor2, tensor3, tensor4]
+            result = []
+            for item in batch:
+                result.extend(item)
+            return result
         transposed = zip(*batch)
-        return [collate_dc(samples, samples_per_gpu) for samples in transposed]
+        return [collate_dc(samples, samples_per_gpu, _recursion_depth + 1) for samples in transposed]
     elif isinstance(batch[0], Mapping):
         
         return {
-            key: collate_dc([d[key] for d in batch], samples_per_gpu)
+            key: collate_dc([d[key] for d in batch], samples_per_gpu, _recursion_depth + 1)
             for key in batch[0]
         }
     else:

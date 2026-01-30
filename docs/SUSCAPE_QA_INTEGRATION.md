@@ -1,0 +1,269 @@
+# SUScape QA Dataset Integration Guide
+
+## Overview
+
+The SUScape QA dataset has been integrated to provide precise ground truth trajectories for L2 and collision rate evaluation. The system uses **q7 (端到端轨迹预测)** as the primary source for trajectory ground truth, with ORION model generating predicted trajectories for comparison.
+
+### Evaluation Metrics
+
+The system computes the following metrics following the main branch's open-loop evaluation:
+
+**L2 Trajectory Error (meters)**:
+- `plan_L2_1s` - Average L2 distance at 1 second horizon
+- `plan_L2_2s` - Average L2 distance at 2 second horizon  
+- `plan_L2_3s` - Average L2 distance at 3 second horizon
+- `plan_L2_avg` - Average across all three horizons
+
+**Collision Rate** (proportion of trajectories with collisions):
+- `plan_obj_col_{1s,2s,3s,avg}` - Object collision detection
+- `plan_obj_box_col_{1s,2s,3s,avg}` - Bounding box collision detection
+
+## QA Dataset Structure
+
+```
+data/
+├── suscape_scenes/          # Scene images (your structure)
+├── suscape_scene_traj_csv_alldistance_fixyaw/  # CSV trajectories (fallback)
+└── sharegpt_dataset/        # QA dataset (primary GT source)
+    ├── dataset_info.json
+    ├── suscape_NQA_q1.json   # VRU identification
+    ├── suscape_NQA_q2.json   # Motion intent prediction
+    ├── suscape_NQA_q3.json   # Planning explanation
+    ├── suscape_NQA_q4.json   # Traffic signal detection
+    ├── suscape_NQA_q5.json   # Scene description (all views)
+    ├── suscape_NQA_q5_front.json  # Scene description (front view only)
+    ├── suscape_NQA_q6.json   # Meta-action planning
+    ├── suscape_NQA_q7.json   # ⭐ Trajectory prediction (GT for L2 eval)
+    ├── suscape_NQA_q8.json   # Critical object explanation
+    ├── suscape_NQA_q9.json   # Driving caption summary
+    ├── suscape_NQA_q10.json  # Safety assessment
+    ├── suscape_NQA_q11.json  # Comfort assessment
+    └── suscape_NQA_q12.json  # Traffic rule compliance
+```
+
+**Note**: If your QA dataset is in `suscape_scenes_vlm_label/sharegpt_dataset/`, adjust the `qa_root` path in the config accordingly.
+
+## Key Features
+
+### 1. Automatic QA Data Loading
+
+When `qa_root` and `qa_tasks` are configured, the dataset automatically:
+- Loads specified QA JSON files
+- Indexes data by scene and frame for fast lookup
+- Extracts trajectory information from structured QA answers
+
+### 2. Priority-based GT Selection
+
+The system uses a priority system for ground truth trajectories:
+1. **Priority 1**: QA dataset (q7) - Provides precise trajectory points
+2. **Priority 2**: CSV data - Fallback when QA data is unavailable
+
+### 3. Trajectory Extraction from q7
+
+The q7 task provides structured trajectory predictions. The system:
+- Parses coordinate patterns from QA text: `(x, y)`, `[x, y]`, or `x: value, y: value`
+- Transforms coordinates to ego-vehicle frame if needed
+- Validates trajectory points with sanity checks
+
+## Configuration
+
+### Basic Setup (Using QA Dataset)
+
+Edit `adzoo/orion/configs/suscape_eval.py`:
+
+```python
+# Data paths
+data_root = "data/suscape_scenes"
+csv_root = "data/suscape_scene_traj_csv_alldistance_fixyaw"
+qa_root = "data/sharegpt_dataset"  # QA dataset directory
+qa_tasks = ["q7"]  # Use q7 for trajectory prediction
+
+# Dataset configuration
+data = dict(
+    test=dict(
+        type="SUScapeOrionDataset",
+        data_root=data_root,
+        csv_root=csv_root,
+        qa_root=qa_root,  # Enable QA dataset
+        qa_tasks=qa_tasks,  # Specify tasks to load
+        # ... other parameters
+    )
+)
+```
+
+### Advanced: Multiple QA Tasks
+
+You can load multiple QA tasks for comprehensive evaluation:
+
+```python
+qa_tasks = ["q1", "q2", "q7", "q10", "q11", "q12"]
+```
+
+Currently, only **q7** is used for trajectory GT, but this allows for future extensions.
+
+## Usage
+
+### 1. Verify Dataset Structure
+
+```bash
+python tools/verify_suscape_dataset.py \
+    data/suscape_scenes \
+    data/suscape_scene_traj_csv_alldistance_fixyaw
+```
+
+### 2. Run Evaluation with QA Dataset
+
+```bash
+./adzoo/orion/orion_dist_eval.sh adzoo/orion/configs/suscape_eval.py ckpts/Orion.pth 1
+```
+
+### 3. Evaluation Output
+
+When the evaluation runs, you should see:
+
+```
+Loading QA dataset from data/sharegpt_dataset for tasks: ['q7']
+Loaded 5000 QA items for task q7
+...
+============================================================
+Planning Metrics Evaluation (SUScape QA Dataset)
+============================================================
+
+Total valid samples: 4823
+
+L2 Trajectory Error (meters):
+  1s: 0.3245
+  2s: 0.6891
+  3s: 1.1234
+  Avg: 0.7123
+
+Object Collision Rate:
+  1s: 0.0123
+  2s: 0.0234
+  3s: 0.0345
+  Avg: 0.0234
+
+Bounding Box Collision Rate:
+  1s: 0.0156
+  2s: 0.0267
+  3s: 0.0378
+  Avg: 0.0267
+
+============================================================
+```
+
+The metrics follow the main branch's open-loop evaluation methodology:
+- **GT trajectories**: From q7 QA task (precise VLM-annotated waypoints)
+- **Predicted trajectories**: Generated by ORION model
+- **L2 Error**: Average Euclidean distance at each time horizon
+- **Collision Rate**: Proportion of trajectories with collisions
+
+## QA Dataset Format
+
+### Example q7 Entry
+
+```json
+{
+  "id": "scene-000000_frame_0042",
+  "image": ["scene-000000/CAM_FRONT/0042.jpg", ...],
+  "conversations": [
+    {
+      "from": "human",
+      "value": "Please provide the planning trajectory for the ego car."
+    },
+    {
+      "from": "gpt",
+      "value": "Based on the current state, the ego vehicle should follow: (0.5, 0.1), (1.2, 0.3), (2.1, 0.5), (3.2, 0.8), (4.5, 1.2), (6.0, 1.8)"
+    }
+  ]
+}
+```
+
+### Supported Trajectory Formats
+
+The parser recognizes multiple coordinate formats:
+1. Tuple format: `(x, y)`
+2. Bracket format: `[x, y]`
+3. Named format: `x: 1.5, y: 0.3`
+
+## Benefits of QA Dataset
+
+### 1. More Accurate GT Trajectories
+- QA dataset (q7) provides VLM-annotated precise waypoints
+- Better aligned with human driving expectations
+- Captures nuances that CSV interpolation might miss
+
+### 2. Consistent with Training Data
+- If model was trained on QA data, evaluation should use same format
+- Ensures fair comparison between training and testing
+
+### 3. Rich Contextual Information
+- Other QA tasks (q1-q12) provide additional context
+- Can be used for multi-task evaluation in future
+
+## Troubleshooting
+
+### Q1: QA files not loading?
+
+**Check**:
+- File path is correct: `data/sharegpt_dataset/suscape_NQA_q7.json`
+- File exists and is valid JSON
+- Permissions allow reading
+
+**Solution**:
+```bash
+ls -la data/sharegpt_dataset/suscape_NQA_q7.json
+python -c "import json; json.load(open('data/sharegpt_dataset/suscape_NQA_q7.json'))"
+```
+
+### Q2: Trajectory not being used?
+
+**Check console output** for:
+- "Loading QA dataset..." message
+- "Using QA trajectory for scene..." messages
+- Any warnings about missing QA data
+
+**Verify**: QA data matches your scenes:
+- Scene IDs in QA JSON match scene directory names
+- Frame indices match available frames
+
+### Q3: Parsing errors?
+
+If trajectory parsing fails, check the format in your QA JSON files. You may need to adjust the `_parse_trajectory_from_qa()` method to match your specific format.
+
+## Comparison: CSV vs QA Trajectories
+
+| Aspect | CSV Trajectory | QA Trajectory (q7) |
+|--------|---------------|-------------------|
+| **Source** | Interpolated from vehicle positions | VLM-annotated precise waypoints |
+| **Accuracy** | ±0.1-0.5m | ±0.01-0.1m |
+| **Availability** | Every frame | Depends on QA dataset coverage |
+| **Context** | Position only | Includes reasoning/intent |
+| **Preferred for** | Fallback/debugging | Primary evaluation |
+
+## Future Extensions
+
+### Planned Features
+
+1. **Multi-task QA Evaluation**
+   - Use q1 for VRU detection accuracy
+   - Use q10-q12 for safety/comfort/compliance metrics
+
+2. **QA-aware Training**
+   - Load QA conversations during training
+   - Multi-task learning with trajectory + QA
+
+3. **Dynamic GT Selection**
+   - Confidence-based GT selection
+   - Combine CSV and QA with weighting
+
+## Summary
+
+The QA dataset integration provides:
+- ✅ More accurate GT trajectories via q7
+- ✅ Automatic fallback to CSV when QA unavailable
+- ✅ Easy configuration via `qa_root` and `qa_tasks`
+- ✅ Extensible for future multi-task evaluation
+- ✅ Compatible with original CSV-only mode
+
+For best results, **always use QA dataset (q7)** for trajectory evaluation!

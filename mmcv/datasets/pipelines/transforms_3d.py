@@ -1185,7 +1185,32 @@ class LoadAnnoatationCriticalVQATest():
     
 
     def __call__(self, results):
-        sources = self.preprocess_vqa(results)
+        # Check if pre-annotated QA conversations are available
+        if 'qa_conversations' in results and len(results['qa_conversations']) > 0:
+            # Use pre-annotated QA from ShareGPT dataset
+            qa_convs = results['qa_conversations']
+            
+            # Convert ShareGPT format to sources format
+            # ShareGPT: [{"from": "human", "value": "Q"}, {"from": "gpt", "value": "A"}, ...]
+            # Sources: [[{"from": "human", "value": "Q"}, {"from": "gpt", "value": "A"}], ...]
+            sources = []
+            i = 0
+            while i < len(qa_convs):
+                if qa_convs[i].get('from') == 'human' and i + 1 < len(qa_convs) and qa_convs[i + 1].get('from') == 'gpt':
+                    sources.append([qa_convs[i], qa_convs[i + 1]])
+                    i += 2
+                else:
+                    i += 1
+            
+            print(f"✓ Using {len(sources)} pre-annotated QA pairs from ShareGPT dataset (scene: {results.get('scene_token', 'unknown')})")
+        else:
+            # Fallback to generated VQA (original behavior)
+            if 'qa_conversations' not in results:
+                print(f"✗ No qa_conversations in results for scene {results.get('scene_token', 'unknown')}")
+            elif len(results.get('qa_conversations', [])) == 0:
+                print(f"✗ Empty qa_conversations for scene {results.get('scene_token', 'unknown')}")
+            sources = self.preprocess_vqa(results)
+        
         prompt = f"You are driving a car."
 
         if self.use_gen_token:
@@ -1197,7 +1222,6 @@ class LoadAnnoatationCriticalVQATest():
                 {"from": 'gpt',
                 "value": "Here is the planning trajectory <waypoint_ego>"}]
             ]
-        vlm_labels = [anno[0]['value'] for anno in sources]
 
         if self.use_gen_token:
             vqa_anno = [item for pair in sources for item in pair]
@@ -1207,8 +1231,11 @@ class LoadAnnoatationCriticalVQATest():
             vqa_anno = [item for pair in sources for item in pair]
             vqa_anno[0]['value'] = DEFAULT_IMAGE_TOKEN + '\n' + prompt + vqa_anno[0]['value']
         
-        vqa_converted = preprocess(sources, self.tokenizer, has_image=True, training_mode=False, only_one_system_prompt = True)
-        input_ids = vqa_converted['input_ids']
+        # Use training_mode=True to get proper labels as tensors
+        vqa_converted = preprocess(sources, self.tokenizer, has_image=True, training_mode=True, only_one_system_prompt = True)
+        # Extract individual tensors from the batch (sources can have multiple conversations)
+        input_ids = [vqa_converted['input_ids'][i] for i in range(len(sources))]
+        vlm_labels = [vqa_converted['labels'][i] for i in range(len(sources))]
 
         results['input_ids'] = input_ids
         results['vlm_labels'] = vlm_labels

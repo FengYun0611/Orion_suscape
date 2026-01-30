@@ -21,14 +21,18 @@ if [ ! -d ${WORK_DIR}logs ]; then
     mkdir -p ${WORK_DIR}logs
 fi
 
-PYTHONPATH="$(dirname $0)/..":$PYTHONPATH \
+# Get the absolute path of the script directory
+# This works correctly even when called through sbatch
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+PYTHONPATH="$SCRIPT_DIR/..":$PYTHONPATH \
 python -m torch.distributed.launch \
     --nproc_per_node=${GPUS_PER_NODE} \
     --master_addr=${MASTER_ADDR} \
     --master_port=${MASTER_PORT} \
     --nnodes=${NNODES} \
     --node_rank=${RANK} \
-    $(dirname "$0")/train.py \
+    "$SCRIPT_DIR/train.py" \
     $CFG \
     --launcher pytorch ${@:3} \
     --deterministic \

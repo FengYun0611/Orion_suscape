@@ -44,6 +44,7 @@ ORION uniquely combines a QT-Former to aggregate long-term history context, a La
 - [√] ORION Checkpoint
 - [√] Chat-B2D Dataset 
 - [√] ORION Training Framework
+- [√] **SUScape Dataset Support** (NEW! - Open-loop evaluation with L2 and collision metrics)
 
 
 
@@ -138,6 +139,42 @@ The results of UniAD & VAD are refer to the official results of [Bench2DriveZoo]
 
 ## Qalitative visualization & Analysis
 We provide some visualization videos and qualitatively analysis for Orion and compared them with TCP-traj, UniAD-Base, VAD-Base at [here](docs/analysis.md). 
+
+## SUScape Dataset Evaluation (NEW!)
+
+We now support open-loop evaluation on the **SUScape QA dataset** with automatic CSV parsing and L2/collision metrics.
+
+### Quick Start with SUScape
+
+```bash
+# 1. Prepare your SUScape dataset in data/suscape_scenes/raws/
+# Each scene should have: 0.csv + 6 camera directories
+
+# 2. Verify dataset structure
+python tools/verify_suscape_dataset.py data/suscape_scenes
+
+# 3. Run evaluation (auto-generates annotations on first run)
+./adzoo/orion/orion_dist_eval.sh adzoo/orion/configs/suscape_eval.py ckpts/Orion.pth 1
+```
+
+**Metrics computed:**
+- `plan_L2_{1,2,3}s` - Trajectory L2 error at 1/2/3 seconds
+- `plan_obj_col_{1,2,3}s` - Object collision rate
+- `plan_obj_box_col_{1,2,3}s` - Bounding box collision rate
+
+**Documentation:**
+- [Quick Start Guide](docs/HOW_TO_USE_SUSCAPE.md) - Main guide (bilingual 中英双语)
+- [Detailed Tutorial (Chinese)](docs/SUSCAPE_EVALUATION.md) - 详细中文教程
+- [Detailed Tutorial (English)](docs/SUSCAPE_EVALUATION_EN.md) - Detailed English guide
+- [Quick Reference](docs/SUSCAPE_QUICKSTART.md) - Fast lookup
+- [Implementation Details](docs/IMPLEMENTATION_SUMMARY.md) - Technical summary
+
+**Key Features:**
+- ✅ Automatic annotation generation from CSV files
+- ✅ 6-camera multi-view support
+- ✅ Customizable detection ranges and prediction horizons
+- ✅ Complete bilingual documentation
+- ✅ Dataset verification tool included
 
 
 ## Citation

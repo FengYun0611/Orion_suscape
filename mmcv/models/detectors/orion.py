@@ -159,10 +159,20 @@ class Orion(MVXTwoStageDetector):
             self.map_head.ego_pose_pe = self.ego_pose_pe
 
         if tokenizer is not None:
+            # Convert relative/local paths to absolute paths to avoid HuggingFace validation error
+            # This must be done even if path doesn't exist yet, to bypass repo ID validation
+            if tokenizer.startswith('./') or tokenizer.startswith('../') or tokenizer.startswith('/'):
+                tokenizer = os.path.abspath(tokenizer)
+            
+            # Strip trailing slash which can cause issues with HuggingFace
+            tokenizer = tokenizer.rstrip('/')
+            
             self.tokenizer =  AutoTokenizer.from_pretrained(tokenizer,
                                         model_max_length=2048,
                                         padding_side="right",
                                         use_fast=False,
+                                        local_files_only=True,
+                                        trust_remote_code=True,
                                         )
             self.tokenizer.pad_token = self.tokenizer.unk_token
         else:
@@ -493,7 +503,11 @@ class Orion(MVXTwoStageDetector):
             vlm_labels = None
             vlm_attn_mask = None
         # img_metas = [img_metas[0][0]] # BUG:这样不是seq
-        img_metas = [img_meta[0] for img_meta in img_metas]
+        # Handle img_metas structure - it may already be unwrapped or still nested
+        # After collation, check if elements are dicts (already unwrapped) or lists (need unwrapping)
+        if img_metas and isinstance(img_metas[0], list):
+            img_metas = [img_meta[0] for img_meta in img_metas]
+        # If img_metas elements are already dicts, use as-is
 
         data['img_feats'] = self.extract_feat(data['img'])
         losses = self.forward_pts_train(gt_bboxes_3d, gt_labels_3d, gt_attr_labels,map_gt_bboxes_3d, map_gt_labels_3d, img_metas,input_ids, vlm_labels, vlm_attn_mask, ego_fut_trajs,**data)
